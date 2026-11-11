@@ -65,7 +65,8 @@ label.fl{display:block;font-size:13px;font-weight:700;margin:16px 0 6px;color:#3
 .modebadge.firebase{background:#dcfce7;color:#166534}
 .hero{max-width:1000px;margin:20px auto 0;padding:0 24px;text-align:center}
 .hero h1{font-size:clamp(28px,4.5vw,44px);line-height:1.25;margin:20px 0 12px;font-weight:900;letter-spacing:-.02em}
-.hero>p{color:var(--muted);font-size:17px;margin:0 0 28px}
+.hero>p{color:var(--muted);font-size:17px;line-height:1.7;margin:0 0 28px}
+.eyebrow{display:inline-block;margin-top:14px;padding:6px 14px;border-radius:999px;background:#ededfc;color:var(--brand);font-size:13px;font-weight:700;letter-spacing:.04em}
 .hero-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;text-align:left}
 .hcard{background:#fff;border-radius:18px;padding:24px;box-shadow:0 1px 2px #0000000d,0 8px 30px #0000000f}
 .hcard h3{margin:0 0 2px;font-size:19px}
@@ -485,8 +486,9 @@ function renderHome() {
     <header class="topbar"><div class="logo"><span class="logo-mark">▦</span> 우리반 보드</div>
       <span class="modebadge ${S.store.mode}">${S.store.mode === 'firebase' ? '● 실시간 연결됨' : '● 데모 모드 (이 기기에만 저장)'}</span></header>
     <section class="hero">
-      <h1>보드도, 게시물도 무제한.<br>우리 반만의 패들렛</h1>
-      <p>보드를 만들고 코드·QR을 보여주면 학생들이 노트북으로 바로 들어와요.</p>
+      <div class="eyebrow">심곡초등학교 · 함께 만드는 생각 보드</div>
+      <h1>작은 생각이 모여<br>심곡의 이야기가 됩니다</h1>
+      <p>심곡초 학생들이 함께 쓰고, 나누고, 채워 가는 우리만의 공간.<br>코드나 QR로 들어와 오늘의 생각을 남겨 주세요.</p>
       <div class="hero-cards">
         <div class="hcard"><h3>🧑‍🏫 새 보드 만들기</h3><p class="muted">선생님용 · 레이아웃, 배경, 권한 설정</p><button class="btn primary big" id="newBoard">＋ 보드 만들기</button></div>
         <div class="hcard"><h3>🎒 코드로 참여하기</h3><p class="muted">학생용 · 선생님이 알려준 6자리 코드</p>
