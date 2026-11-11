@@ -72,6 +72,11 @@ label.fl{display:block;font-size:13px;font-weight:700;margin:16px 0 6px;color:#3
 .hcard p{margin:0 0 16px}
 .join{display:flex;gap:8px}
 .join .input{text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+.hqr{display:flex;gap:14px;align-items:center}
+.hqr img{width:136px;height:136px;image-rendering:pixelated;border-radius:12px;border:1px solid var(--line);cursor:zoom-in;flex:none;background:#fff}
+.hqr .qwait{width:136px;height:136px;border-radius:12px;background:#f3f4f6;display:grid;place-items:center;font-size:12px;color:var(--muted);flex:none}
+.hqr .u{font-size:13px;font-weight:700;word-break:break-all;color:var(--brand);margin-bottom:8px}
+.hqr .acts{display:flex;gap:6px;flex-wrap:wrap}
 .notice{max-width:1000px;margin:24px auto 0;padding:18px 22px;border-radius:16px;background:#fff;border:1px dashed #c7c7f0;font-size:14px;line-height:1.7}
 .notice h3{margin:0 0 6px;font-size:15px}
 .notice ol{margin:6px 0 0;padding-left:20px}
@@ -486,12 +491,18 @@ function renderHome() {
         <div class="hcard"><h3>🧑‍🏫 새 보드 만들기</h3><p class="muted">선생님용 · 레이아웃, 배경, 권한 설정</p><button class="btn primary big" id="newBoard">＋ 보드 만들기</button></div>
         <div class="hcard"><h3>🎒 코드로 참여하기</h3><p class="muted">학생용 · 선생님이 알려준 6자리 코드</p>
           <form id="joinForm" class="join"><input class="input" id="joinCode" placeholder="예: K7P2QX" maxlength="12" autocomplete="off"><button class="btn primary">입장</button></form></div>
+        <div class="hcard"><h3>📱 QR로 바로 접속</h3><p class="muted">휴대폰·태블릿 카메라로 찍으면 이 사이트가 열려요</p>
+          <div class="hqr"><div class="qwait" id="homeQrWait">QR 만드는 중…</div><img id="homeQr" alt="이 사이트 접속 QR 코드" title="클릭하면 크게 보여요" hidden>
+            <div><div class="u">${esc(siteUrl())}</div><div class="acts"><button class="btn sm" id="homeQrCopy">주소 복사</button><button class="btn sm" id="homeQrBig">📺 크게</button></div></div></div></div>
       </div>
     </section>
     ${S.store.mode === 'local' ? setupNoticeHTML() : ''}
     <section class="mine"><h2>최근 보드</h2>${list.length ? `<div class="bgrid">${list.map(boardTile).join('')}</div>` : '<p class="muted">아직 보드가 없어요. 위에서 첫 보드를 만들어 보세요!</p>'}</section>
   </div>`;
   $('#newBoard').onclick = openCreate;
+  fillHomeQR();
+  $('#homeQr').onclick = $('#homeQrBig').onclick = openSiteQR;
+  $('#homeQrCopy').onclick = () => copyText(siteUrl());
   $('#joinForm').onsubmit = async e => {
     e.preventDefault();
     const code = $('#joinCode').value.trim().replace(/^#/, '').replace(/^b-/i, '').toUpperCase();
@@ -856,6 +867,32 @@ function renderDetail() {
 }
 
 /* ---------------- 공유 / QR ---------------- */
+function siteUrl() { return location.href.split('#')[0].split('?')[0]; }
+function qrDataURL(text, cell = 8) {
+  try { if (window.qrcode) { const q = qrcode(0, 'M'); q.addData(text); q.make(); return q.createDataURL(cell, 4); } } catch (e) {}
+  return '';
+}
+function fillHomeQR() {
+  const img = $('#homeQr'); if (!img) return;
+  const src = qrDataURL(siteUrl());
+  if (src) { img.src = src; img.hidden = false; $('#homeQrWait')?.remove(); }
+  else if (document.readyState !== 'complete') addEventListener('load', fillHomeQR, { once: true });
+  else { const w = $('#homeQrWait'); if (w) w.textContent = 'QR을 불러오지 못했어요'; }
+}
+function copyText(text) {
+  const fallback = () => { const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); toast('주소를 복사했어요'); } catch (e) { toast('직접 선택해서 복사해 주세요'); } t.remove(); };
+  navigator.clipboard?.writeText(text).then(() => toast('주소를 복사했어요'), fallback) || fallback();
+}
+function openSiteQR() {
+  const url = siteUrl(), src = qrDataURL(url, 10);
+  const m = openModal(`<h2>📱 이 사이트로 바로 접속</h2><div class="share">
+    ${src ? `<img class="qr" src="${src}" alt="QR 코드" style="margin-top:10px">` : '<p class="warn">QR을 만들지 못했어요. 아래 주소를 알려주세요.</p>'}
+    <div class="share-code"><b style="font-size:clamp(18px,3vw,34px);letter-spacing:0;word-break:break-all">${esc(url.replace(/^https?:\/\//, ''))}</b></div>
+    <p class="muted small">카메라로 QR을 찍거나 주소를 입력하면 들어올 수 있어요.</p>
+    </div><div class="mfoot"><button class="btn" id="sq-copy">주소 복사</button><button class="btn primary" data-close>닫기</button></div>`);
+  $('.modal', m).classList.add('projector');
+  $('#sq-copy', m).onclick = () => copyText(url);
+}
 function openShare() {
   const url = location.href.split('#')[0] + '#b-' + S.boardId;
   let qr = '';
