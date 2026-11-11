@@ -11,22 +11,32 @@
   ============================================================
    우리반 보드 — 무료 패들렛 대체 웹사이트 (파일 하나로 동작)
   ============================================================
-   ▶ 그냥 열면 "데모 모드": 이 브라우저에만 저장됩니다.
-   ▶ 학생들과 실시간 공유하려면 아래 FIREBASE_CONFIG 에
-     Firebase(무료 Spark 요금제) 웹앱 설정값을 붙여 넣고,
-     이 파일을 GitHub Pages / Netlify 같은 무료 호스팅에 올리세요.
+   ▶ 학생들이 공개 코드로 참여하고, 보드 생성·관리 및 코드 목록은
+     Firebase Auth로 로그인한 교사 계정만 할 수 있습니다.
+   ▶ 교사 계정: dyflal49@gmail.com (비밀번호는 Firebase Authentication에서 관리)
 
-   Firestore 보안 규칙(Firebase 콘솔 > Firestore > 규칙)에 아래를 붙여 넣으세요:
+   현재 적용해야 하는 Firestore 보안 규칙:
 
    rules_version = '2';
    service cloud.firestore {
      match /databases/{database}/documents {
+       function isTeacher() {
+         return request.auth != null && request.auth.token.email == 'dyflal49@gmail.com';
+       }
        match /boards/{boardId} {
-         allow read, write: if true;
+         allow get: if true;
+         allow list: if isTeacher();
+         allow create, update, delete: if isTeacher();
          match /posts/{postId} {
-           allow read, update, delete: if true;
+           allow read: if true;
            allow create: if exists(/databases/$(database)/documents/boards/$(boardId));
+           allow update, delete: if true;
          }
+       }
+       match /codes/{code} {
+         allow get: if true;
+         allow list: if isTeacher();
+         allow create, update, delete: if isTeacher();
        }
      }
    }
@@ -63,6 +73,12 @@ label.fl{display:block;font-size:13px;font-weight:700;margin:16px 0 6px;color:#3
 .logo-mark{display:inline-grid;place-items:center;width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#5b5bd6,#ec4899);color:#fff;font-size:18px}
 .modebadge{font-size:12.5px;padding:6px 10px;border-radius:999px;background:#fef3c7;color:#92400e;font-weight:500}
 .modebadge.firebase{background:#dcfce7;color:#166534}
+.modebadge.teacher{background:#ede9fe;color:#5b21b6}
+.tright{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.btile .tcode{font-weight:900;letter-spacing:.08em;background:#ffffffd9;color:#1f2328;padding:1px 7px;border-radius:6px}
+.modebadge.teacher{background:#ede9fe;color:#5b21b6}
+.tright{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.btile .tcode{font-weight:900;letter-spacing:.08em;background:#ffffffd9;color:#1f2328;padding:1px 7px;border-radius:6px}
 .hero{max-width:1000px;margin:20px auto 0;padding:0 24px;text-align:center}
 .hero h1{font-size:clamp(28px,4.5vw,44px);line-height:1.25;margin:20px 0 12px;font-weight:900;letter-spacing:-.02em}
 .hero>p{color:var(--muted);font-size:17px;line-height:1.7;margin:0 0 28px}
@@ -283,6 +299,8 @@ label.fl{display:block;font-size:13px;font-weight:700;margin:16px 0 6px;color:#3
      appId: "1:1234567890:web:abcdef"
    };
    ========================================================= */
+/* 교사 계정(고정). 비밀번호는 Firebase 인증에만 저장되고, 사이트의 교사 메뉴에서 바꿀 수 있어요. */
+const TEACHER_EMAIL = 'dyflal49@gmail.com';
 const FIREBASE_CONFIG = {
    apiKey: "AIzaSyACQ-OaIyCbMYPmY8f4ElNnKdK3c9mNs5A",
   authDomain: "claude-padlet.firebaseapp.com",
@@ -340,7 +358,7 @@ const LAYOUTS = {
 function createLocalStore() {
   const KEY = 'mp_localdb', DEL = { __del: 1 };
   let db = LS.get(KEY, { boards: {}, posts: {} });
-  const subs = new Set();
+  const subs = new Set(), authCbs = new Set();
   let bc = null;
   try { bc = new BroadcastChannel('mp-board'); bc.onmessage = () => { db = LS.get(KEY, db); emit(); }; } catch (e) {}
   addEventListener('storage', e => { if (e.key === KEY) { db = LS.get(KEY, db); emit(); } });
@@ -361,9 +379,23 @@ function createLocalStore() {
     listenPosts(id, cb) { const f = () => cb(Object.entries(db.posts[id] || {}).map(([pid, p]) => ({ id: pid, ...clone(p) }))); subs.add(f); setTimeout(f); return () => subs.delete(f); },
     async getBoard(id) { return db.boards[id] ? { id, ...clone(db.boards[id]) } : null; },
     async getPosts(id) { return Object.entries(db.posts[id] || {}).map(([pid, p]) => ({ id: pid, ...clone(p) })); },
-    async createBoard(id, data) { db.boards[id] = clone(data); db.posts[id] = {}; save(); },
+    async createBoard(id, data) { db.boards[id] = clone(data); db.posts[id] = {}; (db.codes ||= {})[data.code] = id; save(); },
     async updateBoard(id, p) { if (db.boards[id]) { setPath(db.boards[id], p); save(); } },
-    async deleteBoard(id) { delete db.boards[id]; delete db.posts[id]; save(); },
+    async deleteBoard(id) { const c = db.boards[id]?.code; if (c && db.codes) delete db.codes[c]; delete db.boards[id]; delete db.posts[id]; save(); },
+    async resolveCode(c) { db = LS.get(KEY, db); if (db.codes?.[c]) return db.codes[c]; return db.boards[c] && !db.boards[c].code ? c : null; },
+    async listBoards() { return Object.entries(db.boards).map(([id, b]) => ({ id, ...clone(b) })); },
+    async changeCode(id, oldC, newC) { db.codes ||= {}; if (oldC && oldC !== newC) delete db.codes[oldC]; db.codes[newC] = id; if (db.boards[id]) db.boards[id].code = newC; save(); },
+    async migrateCodes() { db.codes ||= {}; for (const [id, b] of Object.entries(db.boards)) if (!b.code) { b.code = id; db.codes[id] = id; } save(); },
+    isTeacher() { try { return sessionStorage.getItem('mp_teacher') === '1'; } catch (e) { return !!mem.teacher; } },
+    onAuth(cb) { authCbs.add(cb); return () => authCbs.delete(cb); },
+    async login(pw) {
+      const h = await sha('teacher:' + pw), saved = LS.get('mp_tpw', '');
+      if (saved && saved !== h) throw { code: 'auth/invalid-credential' };
+      if (!saved) LS.set('mp_tpw', h);
+      try { sessionStorage.setItem('mp_teacher', '1'); } catch (e) { mem.teacher = true; } authCbs.forEach(f => f());
+    },
+    async logout() { try { sessionStorage.removeItem('mp_teacher'); } catch (e) { mem.teacher = false; } authCbs.forEach(f => f()); },
+    async changePassword(oldPw, newPw) { if (LS.get('mp_tpw', '') !== await sha('teacher:' + oldPw)) throw { code: 'auth/invalid-credential' }; LS.set('mp_tpw', await sha('teacher:' + newPw)); },
     async addPost(b, id, data) { (db.posts[b] ||= {})[id] = clone(data); save(); },
     async updatePost(b, id, p) { const x = P(b, id); if (x) { setPath(x, p); save(); } },
     async deletePost(b, id) { if (db.posts[b]) delete db.posts[b][id]; save(); },
@@ -378,8 +410,13 @@ async function createFirebaseStore(cfg) {
   const V = '10.12.2';
   const appM = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-app.js`);
   const fs = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`);
+  const au = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-auth.js`);
   const app = appM.initializeApp(cfg);
   const db = fs.initializeFirestore(app, { ignoreUndefinedProperties: true });
+  // 교사 로그인은 이 탭에서만 유지 (탭을 닫으면 자동 로그아웃 → 공용 PC 안전)
+  const auth = au.initializeAuth(app, { persistence: au.browserSessionPersistence });
+  try { if (auth.authStateReady) await auth.authStateReady(); } catch (e) {}
+  const cRef = c => fs.doc(db, 'codes', c);
   const bRef = id => fs.doc(db, 'boards', id);
   const pCol = b => fs.collection(db, 'boards', b, 'posts');
   const pRef = (b, id) => fs.doc(db, 'boards', b, 'posts', id);
@@ -390,9 +427,27 @@ async function createFirebaseStore(cfg) {
     listenPosts(id, cb) { return fs.onSnapshot(pCol(id), qs => cb(qs.docs.map(d => ({ id: d.id, ...d.data() }))), err); },
     async getBoard(id) { const s = await fs.getDoc(bRef(id)); return s.exists() ? { id: s.id, ...s.data() } : null; },
     async getPosts(id) { const qs = await fs.getDocs(pCol(id)); return qs.docs.map(d => ({ id: d.id, ...d.data() })); },
-    createBoard: (id, data) => fs.setDoc(bRef(id), data),
+    async createBoard(id, data) { const bt = fs.writeBatch(db); bt.set(cRef(data.code), { boardId: id, at: Date.now() }); bt.set(bRef(id), data); await bt.commit(); },
     updateBoard: (id, p) => fs.updateDoc(bRef(id), p),
-    async deleteBoard(id) { const qs = await fs.getDocs(pCol(id)); await Promise.all(qs.docs.map(d => fs.deleteDoc(d.ref))); await fs.deleteDoc(bRef(id)); },
+    async deleteBoard(id) {
+      const s = await fs.getDoc(bRef(id)), code = s.exists() ? s.data().code : null;
+      const qs = await fs.getDocs(pCol(id)); await Promise.all(qs.docs.map(d => fs.deleteDoc(d.ref)));
+      if (code) { const c = await fs.getDoc(cRef(code)); if (c.exists() && c.data().boardId === id) await fs.deleteDoc(cRef(code)); }
+      await fs.deleteDoc(bRef(id));
+    },
+    async resolveCode(code) {
+      const s = await fs.getDoc(cRef(code)); if (s.exists()) return s.data().boardId;
+      const b = await fs.getDoc(bRef(code)); return b.exists() && !b.data().code ? code : null; // 예전 방식 보드
+    },
+    async listBoards() { const qs = await fs.getDocs(fs.collection(db, 'boards')); return qs.docs.map(d => ({ id: d.id, ...d.data() })); },
+    async changeCode(id, oldC, newC) { const bt = fs.writeBatch(db); bt.set(cRef(newC), { boardId: id, at: Date.now() }); if (oldC && oldC !== newC) bt.delete(cRef(oldC)); bt.update(bRef(id), { code: newC }); await bt.commit(); },
+    async migrateCodes() { const qs = await fs.getDocs(fs.collection(db, 'boards')); for (const d of qs.docs) if (!d.data().code) await this.changeCode(d.id, null, d.id); },
+    isTeacher: () => !!auth.currentUser && auth.currentUser.email === TEACHER_EMAIL && auth.currentUser.emailVerified,
+    onAuth: cb => au.onAuthStateChanged(auth, () => cb()),
+    login: pw => au.signInWithEmailAndPassword(auth, TEACHER_EMAIL, pw),
+    sendReset: () => au.sendPasswordResetEmail(auth, TEACHER_EMAIL),
+    logout: () => au.signOut(auth),
+    async changePassword(oldPw, newPw) { const u = auth.currentUser; await au.reauthenticateWithCredential(u, au.EmailAuthProvider.credential(TEACHER_EMAIL, oldPw)); await au.updatePassword(u, newPw); },
     addPost: (b, id, data) => fs.setDoc(pRef(b, id), data),
     updatePost: (b, id, p) => fs.updateDoc(pRef(b, id), p),
     deletePost: (b, id) => fs.deleteDoc(pRef(b, id)),
@@ -404,13 +459,22 @@ async function createFirebaseStore(cfg) {
 
 /* ---------------- 상태 ---------------- */
 let cid = LS.get('mp_cid', null); if (!cid) { cid = uid(16); LS.set('mp_cid', cid); }
-const S = { store: null, cid, name: LS.get('mp_name', ''), boardId: null, board: null, posts: [], unsub: [], filter: '', sort: 'new', admin: false, structKey: null, shellKey: null, detail: null, justDragged: false };
+const S = { store: null, cid, name: LS.get('mp_name', ''), boardId: null, code: null, teacher: false, board: null, posts: [], unsub: [], filter: '', sort: 'new', admin: false, structKey: null, shellKey: null, detail: null, justDragged: false };
 const canPost = () => S.admin || !S.board?.locked;
-const isAdminOf = (id, b) => !!(LS.get('mp_admin', {})[id]) || (b && b.createdBy === S.cid);
-function setAdmin(id, on) { const a = LS.get('mp_admin', {}); if (on) a[id] = true; else delete a[id]; LS.set('mp_admin', a); }
-function addMyBoard(id, b, role) {
+const normCode = s => String(s || '').trim().replace(/^#/, '').replace(/^b-/i, '').toUpperCase();
+const CODE_RE = /^[A-Z0-9]{4,12}$/;
+function authMsg(e) {
+  const c = e && e.code || '';
+  if (/invalid-credential|wrong-password|user-not-found|invalid-login/.test(c)) return '비밀번호가 맞지 않아요';
+  if (/too-many-requests/.test(c)) return '시도가 너무 많아요. 잠시 후 다시 해 주세요';
+  if (/weak-password/.test(c)) return '새 비밀번호는 6자 이상으로 해 주세요';
+  if (/network/.test(c)) return '인터넷 연결을 확인해 주세요';
+  if (/permission/.test(c)) return '권한이 없어요. 교사 로그인을 확인해 주세요';
+  return '오류: ' + (c || e?.message || e);
+}
+function addMyBoard(id, b) {
   const list = LS.get('mp_myboards', []).filter(x => x.id !== id);
-  list.unshift({ id, title: b.title, bg: b.bg, layout: b.layout, role, at: Date.now() });
+  list.unshift({ id, title: b.title, bg: b.bg, layout: b.layout, at: Date.now() });
   LS.set('mp_myboards', list.slice(0, 60));
 }
 function removeMyBoard(id) { LS.set('mp_myboards', LS.get('mp_myboards', []).filter(x => x.id !== id)); }
@@ -457,18 +521,121 @@ function askName() {
 }
 
 /* ---------------- 라우팅 ---------------- */
-function currentBoardId() { const h = location.hash.match(/^#b-([A-Za-z0-9]+)$/); return h ? h[1].toUpperCase() : null; }
+function currentCode() { const h = location.hash.match(/^#b-([A-Za-z0-9]+)$/); return h ? h[1].toUpperCase() : null; }
 function cleanup() { S.unsub.forEach(f => { try { f && f(); } catch (e) {} }); S.unsub = []; $$('#modal-root .overlay').forEach(m => m.close()); $('.slides')?.remove(); S.detail = null; }
-function route() { cleanup(); const id = currentBoardId(); id ? openBoard(id) : renderHome(); scrollTo(0, 0); }
+function notFoundHTML(code) { return `<div class="notfound"><h2>보드를 찾을 수 없어요</h2><p class="muted">코드 <b>${esc(code)}</b>를 확인해 주세요. 코드가 바뀌었거나 보드가 삭제되었을 수 있어요.</p><button class="btn primary" onclick="goHome()">홈으로</button></div>`; }
+async function route() {
+  cleanup(); scrollTo(0, 0);
+  const code = currentCode(); if (!code) return renderHome();
+  S.boardId = null; $('#app').innerHTML = '<div class="loading muted">불러오는 중…</div>';
+  let id = null;
+  try { id = await S.store.resolveCode(code); } catch (e) { $('#app').innerHTML = `<div class="notfound"><h2>연결 오류</h2><p class="muted">${esc(e.message)}</p></div>`; return; }
+  if (currentCode() !== code) return;
+  if (!id) { $('#app').innerHTML = notFoundHTML(code); return; }
+  openBoard(id, code);
+}
+function onAuthChange() {
+  const t = S.store.isTeacher(); if (t === S.teacher) return;
+  S.teacher = t;
+  if (t && S.store.migrateCodes) S.store.migrateCodes().catch(e => console.warn(e));
+  if (!S.boardId) { if (!currentCode()) renderHome(); return; }
+  if (S.board) { S.admin = t; S.shellKey = null; renderBoardShell(); renderDetail(); }
+}
+function teacherLogin() {
+  if (S.store.isTeacher()) return Promise.resolve(true);
+  return new Promise(res => {
+    const m = openModal(`<h2>🧑‍🏫 교사 로그인</h2><p class="muted" style="margin:0">교사 비밀번호를 입력하세요.</p>
+      <input class="input" id="tpw" type="password" autocomplete="current-password" style="margin-top:14px" placeholder="교사 비밀번호">
+      <p class="muted small" style="margin:10px 0 0">교사용 계정은 관리자만 등록해요. 비밀번호를 잊으셨다면 재설정 메일을 받으세요.</p>
+      <div class="mfoot"><button class="btn" data-close>취소</button><button class="btn" id="reset">비밀번호 재설정</button><button class="btn primary" id="ok">로그인</button></div>`);
+    const inp = $('#tpw', m); setTimeout(() => inp.focus(), 30);
+    m.onclose = () => res(false);
+    $('#reset', m).onclick = async () => {
+      $('#reset', m).disabled = true;
+      try { await S.store.sendReset(); toast(`비밀번호 재설정 메일을 ${TEACHER_EMAIL}로 보냈어요.`); }
+      catch (e) { toast(authMsg(e)); }
+      $('#reset', m).disabled = false;
+    }; 
+    const go = async () => {
+      const pw = inp.value; if (!pw) return inp.focus();
+      $('#ok', m).disabled = true;
+      try { await S.store.login(pw); m.onclose = null; m.close(); onAuthChange(); toast(S.store.isTeacher() ? '교사 모드로 전환했어요' : '메일 인증 후 교사 권한이 생겨요. 받은 편지함을 확인해 주세요.'); res(S.store.isTeacher()); }
+      catch (e) { $('#ok', m).disabled = false; toast(authMsg(e)); inp.select(); }
+    };
+    $('#ok', m).onclick = go; inp.onkeydown = e => { if (e.key === 'Enter') go(); };
+  });
+}
+async function teacherLogout() { try { await S.store.logout(); onAuthChange(); toast('로그아웃했어요'); } catch (e) { toast(authMsg(e)); } }
+function openChangePw() {
+  const m = openModal(`<h2>🔑 교사 비밀번호 변경</h2>
+    <label class="fl">현재 비밀번호</label><input class="input" id="p0" type="password" autocomplete="current-password">
+    <label class="fl">새 비밀번호 (6자 이상)</label><input class="input" id="p1" type="password" autocomplete="new-password">
+    <label class="fl">새 비밀번호 확인</label><input class="input" id="p2" type="password" autocomplete="new-password">
+    <div class="mfoot"><button class="btn" data-close>취소</button><button class="btn primary" id="ok">변경</button></div>`);
+  setTimeout(() => $('#p0', m).focus(), 30);
+  $('#ok', m).onclick = async () => {
+    const p0 = $('#p0', m).value, p1 = $('#p1', m).value, p2 = $('#p2', m).value;
+    if (!p0) return $('#p0', m).focus();
+    if (p1.length < 6) return toast('새 비밀번호는 6자 이상으로 해 주세요');
+    if (p1 !== p2) return toast('새 비밀번호가 서로 달라요');
+    $('#ok', m).disabled = true;
+    try { await S.store.changePassword(p0, p1); m.close(); toast('비밀번호를 바꾨어요'); }
+    catch (e) { $('#ok', m).disabled = false; toast(authMsg(e)); }
+  };
+}
 addEventListener('hashchange', route);
 function goHome() { if (location.hash) location.hash = ''; else route(); }
 
 /* ---------------- 홈 ---------------- */
-function boardTile(x) {
+function boardTile(x, teacher) {
   const L = LAYOUTS[x.layout] || LAYOUTS.wall;
-  return `<a class="btile ${DARK.has(x.bg) ? 'dark' : ''}" href="#b-${esc(x.id)}" style="background:${BGS[x.bg] || BGS.g1}">
-    <button class="rm" data-rm="${esc(x.id)}" title="목록에서 빼기">✕</button>
-    <b>${esc(x.title)}</b><span class="meta">${L[1]} ${L[0]} · #${esc(x.id)} · ${esc(x.role)}</span></a>`;
+  return `<a class="btile ${DARK.has(x.bg) ? 'dark' : ''}" href="#" data-open="${esc(x.id)}" style="background:${BGS[x.bg] || BGS.g1}">
+    <button class="rm" data-rm="${esc(x.id)}" title="${teacher ? '보드 삭제' : '목록에서 빼기·삭제 (교사 전용)'}">✕</button>
+    <b>${esc(x.title)}</b><span class="meta">${L[1]} ${L[0]} · ${teacher ? `<span class="tcode">#${esc(x.code || x.id)}</span>` : '🔒 코드 입력 필요'}</span></a>`;
+}
+async function askBoardCode(id, title) {
+  const v = await askText(`🔒 ‘${title}’ 보드 코드`, '선생님이 알려준 코드를 입력하세요');
+  if (!v) return;
+  const code = normCode(v);
+  try { const got = await S.store.resolveCode(code); if (got && got === id) location.hash = 'b-' + code; else toast('코드가 맞지 않아요'); }
+  catch (e) { toast('연결 오류: ' + e.message); }
+}
+function chooseRemove(id, title) {
+  return new Promise(res => {
+    const m = openModal(`<h2>‘${esc(title)}’</h2><p style="line-height:1.6;margin:6px 0 0">어떻게 할까요?</p>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px"><button class="btn" id="r-list">최근 목록에서만 빼기 (보드는 그대로)</button><button class="btn danger" id="r-del">보드와 모든 게시물 완전 삭제</button></div>
+      <div class="mfoot"><button class="btn" data-close>취소</button></div>`);
+    m.onclose = () => res(null);
+    $('#r-list', m).onclick = () => { m.onclose = null; m.close(); res('list'); };
+    $('#r-del', m).onclick = () => { m.onclose = null; m.close(); res('del'); };
+  });
+}
+async function deleteBoardFlow(id, title) {
+  if (!(await ask(`<b>${esc(title)}</b> 보드와 모든 게시물을 삭제할까요? 되돌릴 수 없어요.`, '보드 삭제'))) return false;
+  try { await S.store.deleteBoard(id); removeMyBoard(id); toast('보드를 삭제했어요'); return true; } catch (e) { toast(authMsg(e)); return false; }
+}
+async function loadAllBoards() {
+  const box = $('#allBoards'); if (!box) return;
+  try {
+    const all = (await S.store.listBoards()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    if (!$('#allBoards')) return;
+    box.innerHTML = all.length ? `<div class="bgrid">${all.map(x => boardTile(x, true)).join('')}</div>` : '<p class="muted">아직 보드가 없어요. 위에서 첫 보드를 만들어 보세요!</p>';
+    wireTiles(box, Object.fromEntries(all.map(x => [x.id, x])), true);
+  } catch (e) { box.innerHTML = `<p class="warn small">보드 목록을 불러오지 못했어요 (${esc(authMsg(e))})</p>`; }
+}
+function wireTiles(root, byId, teacher) {
+  $$('[data-open]', root).forEach(a => a.onclick = e => {
+    e.preventDefault(); const x = byId[a.dataset.open]; if (!x) return;
+    if (teacher) location.hash = 'b-' + (x.code || x.id); else askBoardCode(x.id, x.title);
+  });
+  $$('[data-rm]', root).forEach(b => b.onclick = async e => {
+    e.preventDefault(); e.stopPropagation(); const x = byId[b.dataset.rm]; if (!x) return;
+    if (teacher) { if (await deleteBoardFlow(x.id, x.title)) loadAllBoards(); return; }
+    if (!(await teacherLogin())) return;
+    const how = await chooseRemove(x.id, x.title);
+    if (how === 'list') { removeMyBoard(x.id); toast('목록에서 뺐어요'); renderHome(); }
+    else if (how === 'del') { if (await deleteBoardFlow(x.id, x.title)) renderHome(); }
+  });
 }
 function setupNoticeHTML() {
   return `<div class="notice"><h3>🧪 지금은 데모 모드예요</h3>
@@ -480,17 +647,19 @@ function setupNoticeHTML() {
 }
 function renderHome() {
   S.boardId = null; S.board = null; document.title = '우리반 보드';
+  const T = S.teacher = S.store.isTeacher();
   const list = LS.get('mp_myboards', []);
   $('#app').innerHTML = `
   <div class="home">
     <header class="topbar"><div class="logo"><span class="logo-mark">▦</span> 우리반 보드</div>
-      <span class="modebadge ${S.store.mode}">${S.store.mode === 'firebase' ? '● 실시간 연결됨' : '● 데모 모드 (이 기기에만 저장)'}</span></header>
+      <div class="tright"><span class="modebadge ${S.store.mode}">${S.store.mode === 'firebase' ? '● 실시간 연결됨' : '● 데모 모드 (이 기기에만 저장)'}</span>
+      ${T ? '<span class="modebadge teacher">🧑‍🏫 교사 모드</span><button class="btn sm" id="tPw">🔑 비밀번호 변경</button><button class="btn sm" id="tOut">로그아웃</button>' : '<button class="btn sm" id="tIn">🧑‍🏫 교사 로그인</button>'}</div></header>
     <section class="hero">
       <div class="eyebrow">심곡초등학교 · 함께 만드는 생각 보드</div>
       <h1>작은 생각이 모여<br>심곡의 이야기가 됩니다</h1>
       <p>심곡초 학생들이 함께 쓰고, 나누고, 채워 가는 우리만의 공간.<br>코드나 QR로 들어와 오늘의 생각을 남겨 주세요.</p>
       <div class="hero-cards">
-        <div class="hcard"><h3>🧑‍🏫 새 보드 만들기</h3><p class="muted">선생님용 · 레이아웃, 배경, 권한 설정</p><button class="btn primary big" id="newBoard">＋ 보드 만들기</button></div>
+        <div class="hcard"><h3>🧑‍🏫 새 보드 만들기</h3><p class="muted">선생님용 · ${T ? '레이아웃, 배경, 권한 설정' : '교사 비밀번호가 필요해요'}</p><button class="btn primary big" id="newBoard">＋ 보드 만들기</button></div>
         <div class="hcard"><h3>🎒 코드로 참여하기</h3><p class="muted">학생용 · 선생님이 알려준 6자리 코드</p>
           <form id="joinForm" class="join"><input class="input" id="joinCode" placeholder="예: K7P2QX" maxlength="12" autocomplete="off"><button class="btn primary">입장</button></form></div>
         <div class="hcard"><h3>📱 QR로 바로 접속</h3><p class="muted">휴대폰·태블릿 카메라로 찍으면 이 사이트가 열려요</p>
@@ -499,66 +668,71 @@ function renderHome() {
       </div>
     </section>
     ${S.store.mode === 'local' ? setupNoticeHTML() : ''}
-    <section class="mine"><h2>최근 보드</h2>${list.length ? `<div class="bgrid">${list.map(boardTile).join('')}</div>` : '<p class="muted">아직 보드가 없어요. 위에서 첫 보드를 만들어 보세요!</p>'}</section>
+    ${T ? `<section class="mine"><h2>전체 보드 <span class="muted small" style="font-weight:400">· 교사에게만 보여요 (코드 포함)</span></h2><div id="allBoards"><p class="muted">불러오는 중…</p></div></section>`
+      : `<section class="mine" id="recent"><h2>최근 보드</h2>${list.length ? `<div class="bgrid">${list.map(x => boardTile(x, false)).join('')}</div><p class="muted small" style="margin-top:10px">🔒 보드에 들어가려면 보드 코드를 다시 입력해야 해요.</p>` : '<p class="muted">아직 들어가 본 보드가 없어요.</p>'}</section>`}
   </div>`;
   $('#newBoard').onclick = openCreate;
+  if (T) { $('#tPw').onclick = openChangePw; $('#tOut').onclick = teacherLogout; loadAllBoards(); }
+  else { $('#tIn').onclick = () => teacherLogin(); const r = $('#recent'); if (r) wireTiles(r, Object.fromEntries(list.map(x => [x.id, x])), false); }
   fillHomeQR();
   $('#homeQr').onclick = $('#homeQrBig').onclick = openSiteQR;
   $('#homeQrCopy').onclick = () => copyText(siteUrl());
   $('#joinForm').onsubmit = async e => {
     e.preventDefault();
-    const code = $('#joinCode').value.trim().replace(/^#/, '').replace(/^b-/i, '').toUpperCase();
+    const code = normCode($('#joinCode').value);
     if (!code) return;
-    try { const b = await S.store.getBoard(code); if (!b) return toast('보드를 찾을 수 없어요. 코드를 확인해 주세요.'); location.hash = 'b-' + code; }
+    try { const id = await S.store.resolveCode(code); if (!id) return toast('보드를 찾을 수 없어요. 코드를 확인해 주세요.'); location.hash = 'b-' + code; }
     catch (err) { toast('연결 오류: ' + err.message); }
   };
-  $$('[data-rm]').forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); removeMyBoard(b.dataset.rm); renderHome(); });
 }
 const layoutOptions = sel => Object.entries(LAYOUTS).map(([k, [n, i, d]]) => `<button type="button" class="lopt ${k === sel ? 'on' : ''}" data-l="${k}"><i>${i}</i><b>${n}</b><span>${d}</span></button>`).join('');
 const bgOptions = sel => Object.entries(BGS).map(([k, v]) => `<button type="button" class="sw ${k === sel ? 'on' : ''}" data-bg="${k}" style="background:${v}"></button>`).join('');
 function pickGroup(container, attr, onPick) {
   container.addEventListener('click', e => { const b = e.target.closest(`[data-${attr}]`); if (!b) return; $$(`[data-${attr}]`, container).forEach(x => x.classList.toggle('on', x === b)); onPick(b.dataset[attr]); });
 }
-function openCreate() {
+async function openCreate() {
+  if (!(await teacherLogin())) return;
   let layout = 'wall', bg = 'g1';
   const m = openModal(`<h2>새 보드 만들기</h2>
     <label class="fl">보드 제목</label><input class="input" id="c-title" maxlength="80" placeholder="예: 3학년 2반 독서 감상 나누기">
     <label class="fl">설명 (선택)</label><textarea class="input" id="c-desc" rows="2" maxlength="300" placeholder="학생들에게 보여줄 안내 문구"></textarea>
     <label class="fl">레이아웃</label><div class="layouts" id="c-lay">${layoutOptions(layout)}</div>
     <label class="fl">배경</label><div class="swatches bgs" id="c-bg">${bgOptions(bg)}</div>
-    <label class="fl">교사 PIN (권장)</label><input class="input" id="c-pin" type="password" inputmode="numeric" maxlength="20" placeholder="4자리 이상 — 다른 기기에서 관리할 때 필요">
+    <p class="muted small" style="margin:14px 0 0">보드 코드는 자동으로 만들어지고, 나중에 보드 설정에서 원하는 코드로 바꿀 수 있어요.</p>
     <div class="mfoot"><button class="btn" data-close>취소</button><button class="btn primary" id="c-ok">만들기</button></div>`);
   pickGroup($('#c-lay', m), 'l', v => layout = v);
   pickGroup($('#c-bg', m), 'bg', v => bg = v);
   setTimeout(() => $('#c-title', m).focus(), 30);
   $('#c-ok', m).onclick = async () => {
     const title = $('#c-title', m).value.trim(); if (!title) return $('#c-title', m).focus();
-    const pin = $('#c-pin', m).value.trim(); if (pin && pin.length < 4) return toast('PIN은 4자리 이상으로 해주세요');
     $('#c-ok', m).disabled = true;
     try {
-      let id; for (let i = 0; i < 5; i++) { id = rand(6); if (!(await S.store.getBoard(id))) break; }
+      const code = await newCode(), id = uid(20);
       const data = { title, desc: $('#c-desc', m).value.trim(), layout, bg, reaction: 'like', allowComments: true, moderation: false, locked: false, showAuthor: true,
         sections: [{ id: uid(6), name: '주제 1' }, { id: uid(6), name: '주제 2' }, { id: uid(6), name: '주제 3' }],
-        pinHash: pin ? await sha(pin) : '', createdBy: S.cid, createdAt: Date.now() };
+        code, createdBy: S.cid, createdAt: Date.now() };
       await S.store.createBoard(id, data);
-      setAdmin(id, true); addMyBoard(id, data, '교사');
-      m.close(); location.hash = 'b-' + id;
-    } catch (err) { $('#c-ok', m).disabled = false; toast('만들기 실패: ' + err.message); }
+      addMyBoard(id, data);
+      m.close(); location.hash = 'b-' + code;
+    } catch (err) { $('#c-ok', m).disabled = false; toast('만들기 실패: ' + authMsg(err)); }
   };
 }
 
+async function newCode() { let code; for (let i = 0; i < 8; i++) { code = rand(6); if (!(await S.store.resolveCode(code))) return code; } return code; }
+
 /* ---------------- 보드 ---------------- */
-function openBoard(id) {
-  S.boardId = id; S.board = null; S.posts = []; S.filter = ''; S.structKey = null; S.shellKey = null;
+function openBoard(id, code) {
+  S.boardId = id; S.code = code; S.board = null; S.posts = []; S.filter = ''; S.structKey = null; S.shellKey = null;
   $('#app').innerHTML = '<div class="loading muted">불러오는 중…</div>';
   let first = true;
   S.unsub.push(S.store.listenBoard(id, b => {
     if (S.boardId !== id) return;
-    if (!b) { S.board = null; $('#app').innerHTML = `<div class="notfound"><h2>보드를 찾을 수 없어요</h2><p class="muted">코드 <b>${esc(id)}</b>를 확인하거나, 보드가 삭제되었을 수 있어요.</p><button class="btn primary" onclick="goHome()">홈으로</button></div>`; return; }
-    S.board = b; S.admin = isAdminOf(id, b);
+    if (!b) { S.board = null; $('#app').innerHTML = notFoundHTML(S.code); return; }
+    S.board = b; S.admin = S.teacher = S.store.isTeacher();
+    if (b.code && b.code !== S.code && S.admin) { S.code = b.code; history.replaceState(null, '', '#b-' + b.code); }
     document.title = b.title + ' · 우리반 보드';
-    addMyBoard(id, b, S.admin ? '교사' : '학생');
-    const key = JSON.stringify([b.title, b.desc, b.bg, b.locked, b.moderation, S.admin]);
+    addMyBoard(id, b);
+    const key = JSON.stringify([b.title, b.desc, b.bg, b.locked, b.moderation, S.admin, S.code]);
     if (key !== S.shellKey) { S.shellKey = key; renderBoardShell(); } else renderPosts();
     renderDetail();
     if (first) { first = false; if (!S.name) askName(); }
@@ -571,7 +745,7 @@ function renderBoardShell() {
   <div class="board-page ${DARK.has(b.bg) ? 'dark' : ''}" style="--bg:${BGS[b.bg] || BGS.g1}">
     <header class="bhead">
       <button class="btn ghost" id="goHome">← 홈</button>
-      <span class="code">#${esc(S.boardId)}</span>
+      <span class="code">#${esc(S.code)}</span>
       <div class="spacer"></div>
       <input class="input search" id="search" placeholder="🔍 검색" value="${esc(S.filter)}">
       <select class="input hide-sm" id="sort" title="정렬">
@@ -596,7 +770,7 @@ function renderBoardShell() {
   $('#btnSlide').onclick = openSlides;
   if ($('#fab')) $('#fab').onclick = () => openEditor(null);
   if (S.admin) { $('#btnExport').onclick = openExport; $('#btnSettings').onclick = openSettings; }
-  else $('#btnTeacher').onclick = openTeacherLogin;
+  else $('#btnTeacher').onclick = () => teacherLogin();
   S.structKey = null;
   wirePosts($('#posts'));
   renderPosts();
@@ -896,11 +1070,11 @@ function openSiteQR() {
   $('#sq-copy', m).onclick = () => copyText(url);
 }
 function openShare() {
-  const url = location.href.split('#')[0] + '#b-' + S.boardId;
+  const url = siteUrl() + '#b-' + S.code;
   let qr = '';
   try { if (window.qrcode) { const q = qrcode(0, 'M'); q.addData(url); q.make(); qr = `<img class="qr" src="${q.createDataURL(8, 4)}" alt="QR 코드">`; } } catch (e) {}
   const m = openModal(`<h2>학생들과 공유하기</h2><div class="share">
-    <div class="share-code"><span class="muted">보드 코드</span><b>${esc(S.boardId)}</b></div>${qr}
+    <div class="share-code"><span class="muted">보드 코드</span><b>${esc(S.code)}</b></div>${qr}
     <div class="copyrow"><input class="input" readonly value="${esc(url)}" id="sh-url"><button class="btn primary" id="sh-copy">복사</button></div>
     <p class="muted small">학생은 링크·QR로 들어오거나, 첫 화면에서 코드를 입력하면 돼요.</p>
     ${S.store.mode === 'local' ? '<p class="warn small">⚠ 데모 모드에서는 다른 기기에서 이 보드가 보이지 않아요. Firebase를 연결해 주세요.</p>' : ''}
@@ -936,14 +1110,6 @@ function openSlides() {
 }
 
 /* ---------------- 교사 로그인 / 설정 / 내보내기 ---------------- */
-function openTeacherLogin() {
-  const b = S.board;
-  if (!b.pinHash) return openModal(`<h2>교사 모드</h2><p style="line-height:1.6">이 보드는 교사 PIN이 설정되지 않았어요.<br>보드를 만든 기기(브라우저)에서만 관리할 수 있어요.</p><div class="mfoot"><button class="btn primary" data-close>확인</button></div>`);
-  const m = openModal(`<h2>🧑‍🏫 교사 로그인</h2><p class="muted" style="margin:0">보드를 만들 때 정한 PIN을 입력하세요.</p><input class="input" id="pin" type="password" inputmode="numeric" style="margin-top:14px" placeholder="PIN"><div class="mfoot"><button class="btn" data-close>취소</button><button class="btn primary" id="ok">로그인</button></div>`);
-  const inp = $('#pin', m); setTimeout(() => inp.focus(), 30);
-  const go = async () => { if ((await sha(inp.value.trim())) === b.pinHash) { setAdmin(S.boardId, true); m.close(); S.admin = true; S.shellKey = null; addMyBoard(S.boardId, b, '교사'); renderBoardShell(); toast('교사 모드로 전환했어요'); } else { toast('PIN이 맞지 않아요'); inp.select(); } };
-  $('#ok', m).onclick = go; inp.onkeydown = e => { if (e.key === 'Enter') go(); };
-}
 const tog = (id, text, on) => `<label class="tog"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><span class="tr"></span>${text}</label>`;
 function openSettings() {
   const b = S.board; let layout = LAYOUTS[b.layout] ? b.layout : 'wall', bg = b.bg || 'g1';
@@ -961,8 +1127,8 @@ function openSettings() {
       ${tog('s-mod', '검토 모드 — 선생님이 승인한 게시물만 공개', !!b.moderation)}
       ${tog('s-lock', '보드 잠금 — 학생 새 게시 금지 (보기·댓글은 가능)', !!b.locked)}
     </div>
-    <label class="fl">교사 PIN ${b.pinHash ? '변경' : '설정'} <span class="muted small" style="font-weight:400">— 비워두면 유지</span></label><input class="input" id="s-pin" type="password" inputmode="numeric" placeholder="새 PIN (4자리 이상)">
-    <div class="danger-zone"><button class="btn sm" id="s-dup" type="button">📄 보드 복제</button><button class="btn sm" id="s-logout" type="button">이 기기 교사 모드 끄기</button><button class="btn sm danger" id="s-clear" type="button">모든 게시물 삭제</button><button class="btn sm danger" id="s-del" type="button">보드 삭제</button></div>
+    <label class="fl">보드 코드 <span class="muted small" style="font-weight:400">— 영문·숫자 4~12자. 바꾸면 예전 코드로는 들어올 수 없어요</span></label><input class="input" id="s-code" value="${esc(b.code || S.code)}" maxlength="12" autocomplete="off" style="text-transform:uppercase;letter-spacing:.1em;font-weight:700">
+    <div class="danger-zone"><button class="btn sm" id="s-dup" type="button">📄 보드 복제</button><button class="btn sm" id="s-logout" type="button">교사 로그아웃</button><button class="btn sm danger" id="s-clear" type="button">모든 게시물 삭제</button><button class="btn sm danger" id="s-del" type="button">보드 삭제</button></div>
     <div class="mfoot"><button class="btn" data-close>취소</button><button class="btn primary" id="s-save">저장</button></div>`);
   $('#s-react', m).value = b.reaction || 'like';
   pickGroup($('#s-lay', m), 'l', v => layout = v);
@@ -979,20 +1145,29 @@ function openSettings() {
   $('#s-addsec', m).onclick = () => { sections.push({ id: uid(6), name: '새 섹션' }); drawSecs(); };
   $('#s-save', m).onclick = async () => {
     const title = $('#s-title', m).value.trim(); if (!title) return toast('제목을 입력해 주세요');
-    const pin = $('#s-pin', m).value.trim(); if (pin && pin.length < 4) return toast('PIN은 4자리 이상으로 해주세요');
+    const oldCode = b.code || '', code = normCode($('#s-code', m).value);
+    if (!CODE_RE.test(code)) return toast('보드 코드는 영문·숫자 4~12자로 해 주세요');
+    if (code !== oldCode) {
+      try { const owner = await S.store.resolveCode(code); if (owner && owner !== S.boardId) return toast('이미 다른 보드가 쓰는 코드예요'); }
+      catch (e) { return toast(authMsg(e)); }
+    }
     const patch = { title, desc: $('#s-desc', m).value.trim(), layout, bg, reaction: $('#s-react', m).value, sections: sections.map(s => ({ id: s.id, name: s.name.trim() || '섹션' })),
       allowComments: $('#s-comments', m).checked, showAuthor: $('#s-author', m).checked, moderation: $('#s-mod', m).checked, locked: $('#s-lock', m).checked };
-    if (pin) patch.pinHash = await sha(pin);
-    try { await S.store.updateBoard(S.boardId, patch); m.close(); toast('저장했어요'); } catch (e) { toast('저장 실패: ' + e.message); }
+    try {
+      await S.store.updateBoard(S.boardId, patch);
+      if (code !== oldCode) { await S.store.changeCode(S.boardId, oldCode || null, code); S.code = code; history.replaceState(null, '', '#b-' + code); S.shellKey = null; }
+      m.close(); toast(code !== oldCode ? `저장했어요 · 새 코드 ${code}` : '저장했어요');
+    } catch (e) { toast('저장 실패: ' + authMsg(e)); }
   };
   $('#s-dup', m).onclick = async () => {
-    const id = rand(6);
-    const data = { ...b, title: b.title + ' (복사본)', createdBy: S.cid, createdAt: Date.now() }; delete data.id;
-    try { await S.store.createBoard(id, data); setAdmin(id, true); addMyBoard(id, data, '교사'); m.close(); toast('복제했어요 (게시물은 제외)'); location.hash = 'b-' + id; } catch (e) { toast('오류: ' + e.message); }
+    try {
+      const id = uid(20), code = await newCode();
+      const data = { ...b, title: b.title + ' (복사본)', code, createdBy: S.cid, createdAt: Date.now() }; delete data.id; delete data.pinHash;
+      await S.store.createBoard(id, data); addMyBoard(id, data); m.close(); toast('복제했어요 (게시물은 제외)'); location.hash = 'b-' + code;
+    } catch (e) { toast(authMsg(e)); }
   };
   $('#s-logout', m).onclick = async () => {
-    if (!b.pinHash && b.createdBy === S.cid) return toast('PIN이 없으면 교사 모드를 끌 수 없어요. 먼저 PIN을 설정하세요.');
-    setAdmin(S.boardId, false); m.close(); S.admin = isAdminOf(S.boardId, b); S.shellKey = null; renderBoardShell(); toast('교사 모드를 껐어요');
+    m.close(); await teacherLogout();
   };
   $('#s-clear', m).onclick = async () => {
     if (!(await ask(`게시물 ${S.posts.length}개를 모두 삭제할까요? 되돌릴 수 없어요.`, '모두 삭제'))) return;
@@ -1000,7 +1175,7 @@ function openSettings() {
   };
   $('#s-del', m).onclick = async () => {
     if (!(await ask(`<b>${esc(b.title)}</b> 보드와 모든 게시물을 삭제할까요? 되돌릴 수 없어요.`, '보드 삭제'))) return;
-    try { const id = S.boardId; m.close(); cleanup(); await S.store.deleteBoard(id); removeMyBoard(id); setAdmin(id, false); toast('보드를 삭제했어요'); goHome(); } catch (e) { toast('오류: ' + e.message); }
+    try { const id = S.boardId; m.close(); cleanup(); await S.store.deleteBoard(id); removeMyBoard(id); toast('보드를 삭제했어요'); goHome(); } catch (e) { toast(authMsg(e)); }
   };
 }
 function openExport() {
@@ -1025,7 +1200,10 @@ function openExport() {
 (async () => {
   try { S.store = (FIREBASE_CONFIG && FIREBASE_CONFIG.projectId) ? await createFirebaseStore(FIREBASE_CONFIG) : createLocalStore(); }
   catch (e) { console.error(e); $('#app').innerHTML = `<div class="notfound"><h2>Firebase 연결 실패</h2><p>${esc(e.message)}</p><p class="muted">FIREBASE_CONFIG 값과 인터넷 연결을 확인해 주세요.</p></div>`; return; }
+  S.teacher = S.store.isTeacher();
+  if (S.teacher && S.store.migrateCodes) S.store.migrateCodes().catch(e => console.warn(e));
   route();
+  S.store.onAuth(onAuthChange);
 })();
 </script>
 </body>
