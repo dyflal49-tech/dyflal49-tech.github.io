@@ -14,6 +14,9 @@
    ▶ 학생들이 공개 코드로 참여하고, 보드 생성·관리 및 코드 목록은
      Firebase Auth로 로그인한 교사 계정만 할 수 있습니다.
    ▶ 교사 계정: dyflal49@gmail.com (비밀번호는 Firebase Authentication에서 관리)
+   ▶ 첨부 파일(PDF·PPTX·ZIP 등)은 Firebase Storage 없이 Firestore의 files 컬렉션에
+     900KB 조각(chunks)으로 나눠 저장해요 → 무료 Spark 요금제 그대로 사용 가능.
+     (파일 하나 최대 25MB, 교사만 올릴 수 있음. Firestore 무료 저장 공간 1GiB를 함께 써요)
 
    현재 적용해야 하는 Firestore 보안 규칙:
 
@@ -37,6 +40,14 @@
          allow get: if true;
          allow list: if isTeacher();
          allow create, update, delete: if isTeacher();
+       }
+       match /files/{fileId} {
+         allow get: if true;
+         allow list, write: if isTeacher();
+         match /chunks/{n} {
+           allow get: if true;
+           allow write: if isTeacher();
+         }
        }
      }
    }
@@ -263,6 +274,72 @@ label.fl{display:block;font-size:13px;font-weight:700;margin:16px 0 6px;color:#3
 .s-x{position:absolute;top:16px;right:18px;border:0;background:#ffffff22;color:#fff;width:42px;height:42px;border-radius:12px;font-size:18px}
 .s-count{position:absolute;top:24px;left:24px;color:#cbd5e1;font-weight:700}
 
+/* ---------- 보드 항목(카테고리) ---------- */
+.htool{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.htool .hsearch{flex:1;min-width:220px;font-size:15px;padding:11px 14px}
+.gchips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
+.gchip{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:6px 13px;font-size:14px;font-weight:500;display:inline-flex;align-items:center;gap:6px}
+.gchip:hover{border-color:#c7c7f0}
+.gchip span{min-width:22px;padding:0 7px;border-radius:999px;background:#f1f1f6;color:var(--muted);font-size:12px;font-weight:700;text-align:center}
+.gchip.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.gchip.on span{background:#ffffff33;color:#fff}
+.sresult{margin:0 0 14px;font-size:15px;color:#374151}
+.hempty{text-align:center;padding:40px 16px;background:#fff;border-radius:16px;border:1px dashed var(--line);font-size:16px;line-height:1.8}
+.gsec{margin-bottom:24px}
+.ghead{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;padding:6px 2px 10px;text-align:left;border-bottom:2px solid #e5e7eb;margin-bottom:14px}
+.ghead:disabled{cursor:default;opacity:1}
+.ghead .gname{font-size:20px;font-weight:900;letter-spacing:-.01em;word-break:break-word}
+.ghead .gcount{font-size:13px;font-weight:700;color:#4b5563;background:#fff;border:1px solid var(--line);border-radius:999px;padding:2px 10px;flex:none}
+.ghead .caret{transition:transform .15s;font-size:14px;color:var(--muted);width:18px;flex:none}
+.gsec.closed .caret{transform:rotate(-90deg)}
+.gsec.closed .bgrid,.gsec.closed .gempty{display:none}
+.gsec.closed .ghead{margin-bottom:0}
+.btile .gtag{align-self:flex-start;font-size:11.5px;font-weight:700;background:#ffffffd9;color:#374151;padding:2px 8px;border-radius:999px;margin-bottom:6px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.btile .gtag.none{opacity:.65}
+.btile.picked{outline:3px solid var(--brand);outline-offset:3px}
+.btile .selbox{position:absolute;top:8px;left:8px;width:28px;height:28px;border-radius:8px;background:#fff;border:2px solid #9ca3af;display:grid;place-items:center;font-weight:900;color:#fff;font-size:16px}
+.btile.picked .selbox{background:var(--brand);border-color:var(--brand)}
+.bulkbar{position:sticky;bottom:14px;z-index:15;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff;border:2px solid var(--brand);border-radius:14px;padding:10px 12px;box-shadow:0 8px 24px #5b5bd633;margin-top:12px}
+.bulkbar[hidden]{display:none}
+.bulkbar .bkn{font-size:15px}
+.bulkbar .input{width:230px}
+.bulkbar .grow{flex:1}
+.gnew{display:flex;gap:8px;margin:16px 0 12px}
+.glist{display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow-y:auto}
+.grow-row{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;flex-wrap:wrap}
+.grow-row.none{background:#f9fafb}
+.grow-row .gname{font-weight:700;font-size:15px;word-break:break-word}
+.grow-row .gcount{font-size:12.5px;color:var(--muted)}
+.grow-row .grow{flex:1}
+/* ---------- 댓글 설정 ---------- */
+.cpol{margin-top:18px;padding:14px 14px 16px;border:1px solid #dcdcf5;border-radius:16px;background:#fafaff}
+.cpol h4{margin:0 0 10px;font-size:15px}
+.cmodes{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.cmodes .lopt span{font-size:12px;line-height:1.45;display:block}
+.copts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px;transition:opacity .15s}
+.copts label{font-size:12.5px;font-weight:700;color:#374151;display:flex;flex-direction:column;gap:5px}
+.copts .input{padding:8px 10px}
+.cpol .dim{opacity:.4;pointer-events:none}
+@media (max-width:560px){.cmodes,.copts{grid-template-columns:1fr}}
+.cm.pend{background:#fffbeb;border:1px dashed #f59e0b}
+.cm-acts{display:flex;gap:6px;margin-top:6px}
+.cm-note{font-size:12px;color:#92400e;margin-top:4px}
+.cm-lock{font-size:14px;background:#f5f5ff;color:#4338ca;border-radius:10px;padding:10px 12px;margin:0;font-weight:500}
+.d-ctools{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.d-ctools:empty{display:none}
+.chint{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted);margin-top:5px}
+.chint .full{color:#dc2626;font-weight:700}
+.chint .ch-cnt{flex:none}
+/* ---------- 첨부 파일 ---------- */
+.fchip{display:flex;align-items:center;gap:8px;width:100%;margin:8px 0 4px;padding:9px 11px;border-radius:10px;border:1px solid #0000001a;background:rgba(255,255,255,.8);text-align:left;font-size:13px;color:var(--ink)}
+button.fchip:hover{background:#fff;border-color:var(--brand)}
+.fchip .fi{font-size:20px;flex:none}
+.fchip .fn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700}
+.fchip .fs{color:var(--muted);font-size:12px;flex:none}
+.fchip .fd{flex:none;font-size:12px;color:var(--brand);font-weight:700}
+.fprev{display:flex;gap:8px;align-items:center;margin-top:10px}
+.fprev .fchip{margin:0}
+
 #toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:300;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
 .toast{background:#111827;color:#fff;padding:10px 16px;border-radius:12px;font-size:14px;box-shadow:0 8px 24px #0004;animation:fade .15s}
 .loading,.notfound{text-align:center;padding:80px 20px}
@@ -354,6 +431,106 @@ const LAYOUTS = {
   shelf:['셸프','▥','섹션별 세로 열'], canvas:['캔버스','✥','드래그로 자유 배치'], timeline:['타임라인','⟶','시간순 가로 배열']
 };
 
+/* ---------------- 댓글 규칙 ---------------- */
+const CP_MODES = {
+  all: ['💬', '모두 허용', '학생 누구나 댓글을 쓰면 바로 모두에게 보여요'],
+  approve: ['🛡', '선생님 승인 후 공개', '학생 댓글은 선생님이 승인해야 친구들에게 보여요'],
+  teacher: ['🧑‍🏫', '선생님만 댓글', '학생은 댓글을 읽기만 하고 쓸 수 없어요'],
+  off: ['🚫', '댓글 끄기', '댓글 칸이 사라지고 아무도 쓸 수 없어요']
+};
+const CP_LEN = [50, 100, 200, 500], CP_PER = [0, 1, 2, 3, 5], CP_CD = [0, 10, 30, 60];
+// 예전 보드(commentPolicy 없음)는 allowComments 값으로 판단
+function commentPolicy(b) {
+  const c = (b && b.commentPolicy) || {};
+  return {
+    mode: CP_MODES[c.mode] ? c.mode : (b && b.allowComments === false ? 'off' : 'all'),
+    maxLen: CP_LEN.includes(+c.maxLen) ? +c.maxLen : 500,
+    perPost: CP_PER.includes(+c.perPost) ? +c.perPost : 0,
+    cooldown: CP_CD.includes(+c.cooldown) ? +c.cooldown : 0,
+    filter: !!c.filter
+  };
+}
+const cmVisible = c => c.approved !== false || S.admin || c.cid === S.cid;
+function policyHint(cp, mine) {
+  const a = [cp.maxLen + '자'];
+  if (cp.perPost) a.push(`게시물당 ${cp.perPost}개까지` + (mine != null ? ` (남은 ${Math.max(0, cp.perPost - mine)}개)` : ''));
+  if (cp.cooldown) a.push(`${cp.cooldown}초 간격`);
+  if (cp.mode === 'approve') a.push('선생님 승인 후 공개');
+  if (cp.filter) a.push('🌱 고운 말');
+  return a.join(' · ');
+}
+// 나쁜 말 거르기 (띄어쓰기·기호를 빼고 비교, 흔한 오탐은 예외 처리)
+const BAD_KO = ['씨발', '씨빨', '씨팔', '시발', '시빨', 'ㅅㅂ', 'ㅆㅂ', 'ㅆㅃ', '병신', '븅신', '빙신', 'ㅂㅅ', 'ㅄ', '개새끼', '개새기', '개세끼', '개쉐', '새끼야', '존나', '존내', 'ㅈㄴ', '좆', '지랄', 'ㅈㄹ', '미친놈', '미친년', '미친새끼', 'ㅁㅊ', '닥쳐', '닥치라', '엿먹', '니애미', '느금', '등신', '또라이', '돌아이', '찐따', '쒅', '개빡', '꺼지라', '멍청이', '바보야', '죽어라', '죽을래'];
+const BAD_OK = ['시발점', '시발역', '시발택시'];
+const BAD_EN = /\b(f+u+c+k+\w*|f+u+k+|s+h+i+t+\w*|b[i1]tch\w*|asshole\w*|bastard\w*|dick\w*|damn\w*|stupid|idiot\w*|retard\w*|moron\w*|wtf|stfu|crap\w*)\b/i;
+function hasBadWord(t) {
+  let k = String(t || '').toLowerCase().replace(/[\s0-9.,!?~^*_\-+=/\\|'"`:;()[\]{}<>@#$%&]+/g, '');
+  BAD_OK.forEach(w => k = k.split(w).join(''));
+  return BAD_KO.some(w => k.includes(w)) || BAD_EN.test(String(t || '')) || /fuck|bitch/.test(k);
+}
+
+/* ---------------- 첨부 파일 ---------------- */
+const MAX_FILE = 25 * 1024 * 1024;
+const FILE_TYPES = { pdf: 'application/pdf', ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', zip: 'application/zip', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', hwp: 'application/x-hwp', hwpx: 'application/vnd.hancom.hwpx', txt: 'text/plain', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', mp3: 'audio/mpeg', mp4: 'video/mp4' };
+const extOf = n => (String(n || '').toLowerCase().match(/\.([a-z0-9]+)$/) || [])[1] || '';
+const guessType = n => FILE_TYPES[extOf(n)] || 'application/octet-stream';
+const safeFile = f => f && typeof f === 'object' && typeof f.id === 'string' && f.id ? f : null;
+function fileIcon(f) {
+  const t = f.type || '', e = extOf(f.name);
+  if (t === 'application/pdf' || e === 'pdf') return '📄';
+  if (/powerpoint|presentation/.test(t) || e === 'ppt' || e === 'pptx') return '📊';
+  if (/^application\/(x-)?zip|zip-compressed|x-7z|x-rar/.test(t) || ['zip', '7z', 'rar'].includes(e)) return '🗜';
+  return '📎';
+}
+const fileViewable = f => /^application\/pdf$|^image\//.test(f.type || '') || /^(pdf|png|jpe?g|gif|webp)$/.test(extOf(f.name));
+function fmtSize(n) { n = +n || 0; return n >= 1048576 ? (n / 1048576).toFixed(n >= 10485760 ? 0 : 1) + 'MB' : Math.max(1, Math.round(n / 1024)) + 'KB'; }
+function fileChipHTML(f, clickable = true) {
+  f = safeFile(f); if (!f) return '';
+  const inner = `<span class="fi">${fileIcon(f)}</span><span class="fn">${esc(f.name || '파일')}</span><span class="fs">${fmtSize(f.size)}</span>`;
+  return clickable ? `<button type="button" class="fchip" data-file title="눌러서 ${fileViewable(f) ? '열기' : '내려받기'}">${inner}<span class="fd">${fileViewable(f) ? '열기' : '⬇ 받기'}</span></button>` : `<div class="fchip">${inner}</div>`;
+}
+function progressToast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; $('#toast').appendChild(t); return t; }
+const fileBusy = new Set();
+async function openFile(f) {
+  f = safeFile(f); if (!f) return;
+  if (!S.store.getFile) return toast('이 저장소는 파일을 지원하지 않아요');
+  if (fileBusy.has(f.id)) return toast('이미 받는 중이에요');
+  // PDF·그림은 새 탭에서 열기 (팝업 차단을 피하려고 클릭 즉시 빈 탭을 열어 둠)
+  let w = null;
+  if (fileViewable(f)) { try { w = window.open('', '_blank'); if (w) w.document.write('<title>파일 받는 중…</title><p style="font:16px sans-serif;padding:24px">파일 받는 중… 잠시만 기다려 주세요.</p>'); } catch (e) { w = null; } }
+  fileBusy.add(f.id);
+  const t = progressToast('파일 받는 중… 0%');
+  try {
+    let blob = await S.store.getFile(f.id, r => t.textContent = `파일 받는 중… ${Math.round(r * 100)}%`);
+    if (!blob.type || blob.type === 'application/octet-stream') blob = new Blob([blob], { type: f.type || guessType(f.name) });
+    const url = URL.createObjectURL(blob);
+    if (w && !w.closed) w.location.href = url;
+    else { const a = document.createElement('a'); a.href = url; a.download = f.name || 'file'; document.body.appendChild(a); a.click(); a.remove(); }
+    setTimeout(() => URL.revokeObjectURL(url), 5 * 60000);
+    t.textContent = '✅ 파일을 받았어요'; setTimeout(() => t.remove(), 1800);
+  } catch (e) { try { w && w.close(); } catch (x) {} t.remove(); toast('파일을 받지 못했어요: ' + (e.message || e)); }
+  finally { fileBusy.delete(f.id); }
+}
+
+/* ---------------- 보드 항목(카테고리) ---------------- */
+const NONE = '__none__';
+const gOf = b => String(b?.group || '').trim();
+const HS = { q: '', cat: '*', selecting: false, sel: new Set(), all: [] };
+function allGroups(list = HS.all) {
+  const s = new Set(LS.get('mp_groups', []).filter(x => typeof x === 'string' && x.trim()));
+  list.forEach(b => gOf(b) && s.add(gOf(b)));
+  return [...s].sort((a, b) => a.localeCompare(b, 'ko'));
+}
+const groupOptions = list => allGroups(list).map(g => `<option value="${esc(g)}"></option>`).join('');
+function rememberGroup(g) { g = String(g || '').trim(); if (!g) return; const gl = LS.get('mp_groups', []); if (!gl.includes(g)) LS.set('mp_groups', [...gl, g]); }
+function renameGroupLocal(old, nv) {
+  const gl = LS.get('mp_groups', []).filter(x => x !== old);
+  if (nv && !gl.includes(nv)) gl.push(nv);
+  LS.set('mp_groups', gl);
+  const cl = new Set(LS.get('mp_gclosed', [])); if (cl.delete(old) && nv) cl.add(nv); LS.set('mp_gclosed', [...cl]);
+  if (HS.cat === old) HS.cat = nv || '*';
+}
+
 /* ---------------- 저장소: 데모(로컬) ---------------- */
 function createLocalStore() {
   const KEY = 'mp_localdb', DEL = { __del: 1 };
@@ -373,6 +550,7 @@ function createLocalStore() {
     }
   }
   const P = (b, id) => db.posts[b]?.[id];
+  const files = new Map(); // 데모 모드: 첨부 파일은 이 탭의 메모리에만 (새로고침하면 사라짐)
   return {
     mode: 'local', del: () => DEL,
     listenBoard(id, cb) { const f = () => cb(db.boards[id] ? { id, ...clone(db.boards[id]) } : null); subs.add(f); setTimeout(f); return () => subs.delete(f); },
@@ -381,7 +559,7 @@ function createLocalStore() {
     async getPosts(id) { return Object.entries(db.posts[id] || {}).map(([pid, p]) => ({ id: pid, ...clone(p) })); },
     async createBoard(id, data) { db.boards[id] = clone(data); db.posts[id] = {}; (db.codes ||= {})[data.code] = id; save(); },
     async updateBoard(id, p) { if (db.boards[id]) { setPath(db.boards[id], p); save(); } },
-    async deleteBoard(id) { const c = db.boards[id]?.code; if (c && db.codes) delete db.codes[c]; delete db.boards[id]; delete db.posts[id]; save(); },
+    async deleteBoard(id) { const c = db.boards[id]?.code; if (c && db.codes) delete db.codes[c]; Object.values(db.posts[id] || {}).forEach(p => p.file?.id && files.delete(p.file.id)); delete db.boards[id]; delete db.posts[id]; save(); },
     async resolveCode(c) { db = LS.get(KEY, db); if (db.codes?.[c]) return db.codes[c]; return db.boards[c] && !db.boards[c].code ? c : null; },
     async listBoards() { return Object.entries(db.boards).map(([id, b]) => ({ id, ...clone(b) })); },
     async changeCode(id, oldC, newC) { db.codes ||= {}; if (oldC && oldC !== newC) delete db.codes[oldC]; db.codes[newC] = id; if (db.boards[id]) db.boards[id].code = newC; save(); },
@@ -401,7 +579,19 @@ function createLocalStore() {
     async deletePost(b, id) { if (db.posts[b]) delete db.posts[b][id]; save(); },
     async like(b, id, cid, on) { const x = P(b, id); if (!x) return; const s = new Set(x.likedBy || []); on ? s.add(cid) : s.delete(cid); x.likedBy = [...s]; save(); },
     async addComment(b, id, c) { const x = P(b, id); if (!x) return; (x.comments ||= []).push(clone(c)); save(); },
-    async deleteComment(b, id, c) { const x = P(b, id); if (!x) return; x.comments = (x.comments || []).filter(y => y.id !== c.id); save(); }
+    async deleteComment(b, id, c) { const x = P(b, id); if (!x) return; x.comments = (x.comments || []).filter(y => y.id !== c.id); save(); },
+    async updateComment(b, id, commentId, patch) { const x = P(b, id); if (!x) return; x.comments = (x.comments || []).map(c => c.id === commentId ? { ...c, ...clone(patch) } : c); save(); },
+    async putFile(meta, bytes, onProgress) {
+      const id = meta.id || uid(20);
+      files.set(id, { name: String(meta.name || 'file'), type: String(meta.type || ''), size: +meta.size || bytes.length, data: bytes.slice(), createdAt: Date.now() });
+      onProgress && onProgress(1); return id;
+    },
+    async getFile(id, onProgress) {
+      const f = files.get(id); if (!f) throw new Error('파일을 찾을 수 없어요 (데모 모드에서는 새로고침하면 파일이 사라져요)');
+      onProgress && onProgress(0.5); await new Promise(r => setTimeout(r, 120)); onProgress && onProgress(1);
+      return new Blob([f.data], { type: f.type || 'application/octet-stream' });
+    },
+    async deleteFile(id) { files.delete(id); }
   };
 }
 
@@ -421,6 +611,16 @@ async function createFirebaseStore(cfg) {
   const pCol = b => fs.collection(db, 'boards', b, 'posts');
   const pRef = (b, id) => fs.doc(db, 'boards', b, 'posts', id);
   const err = e => { console.error(e); toast('⚠ 서버 오류: ' + (e.code || e.message)); };
+  // 첨부 파일: files/{id} = {name,type,size,chunks,createdAt}, files/{id}/chunks/{i} = {d: Bytes(최대 900KB)}
+  const fRef = id => fs.doc(db, 'files', id);
+  const chRef = (id, i) => fs.doc(db, 'files', id, 'chunks', String(i));
+  const CHUNK = 900 * 1024, PER_BATCH = 6; // 6조각 ≈ 5.3MB/배치 (전송 시 base64로 커져도 10MB 요청 한도 아래)
+  async function deleteFile(id) {
+    const s = await fs.getDoc(fRef(id)); if (!s.exists()) return;
+    const n = s.data().chunks || 0;
+    for (let i = 0; i < n; i += 450) { const bt = fs.writeBatch(db); for (let j = i; j < Math.min(n, i + 450); j++) bt.delete(chRef(id, j)); await bt.commit(); }
+    await fs.deleteDoc(fRef(id));
+  }
   return {
     mode: 'firebase', del: () => fs.deleteField(),
     listenBoard(id, cb) { return fs.onSnapshot(bRef(id), s => cb(s.exists() ? { id: s.id, ...s.data() } : null), e => { err(e); cb(null); }); },
@@ -431,7 +631,9 @@ async function createFirebaseStore(cfg) {
     updateBoard: (id, p) => fs.updateDoc(bRef(id), p),
     async deleteBoard(id) {
       const s = await fs.getDoc(bRef(id)), code = s.exists() ? s.data().code : null;
-      const qs = await fs.getDocs(pCol(id)); await Promise.all(qs.docs.map(d => fs.deleteDoc(d.ref)));
+      const qs = await fs.getDocs(pCol(id)), fids = qs.docs.map(d => d.data().file?.id).filter(Boolean);
+      await Promise.all(qs.docs.map(d => fs.deleteDoc(d.ref)));
+      for (const f of fids) await deleteFile(f).catch(e => console.warn('파일 정리 실패', f, e));
       if (code) { const c = await fs.getDoc(cRef(code)); if (c.exists() && c.data().boardId === id) await fs.deleteDoc(cRef(code)); }
       await fs.deleteDoc(bRef(id));
     },
@@ -453,7 +655,37 @@ async function createFirebaseStore(cfg) {
     deletePost: (b, id) => fs.deleteDoc(pRef(b, id)),
     like: (b, id, cid, on) => fs.updateDoc(pRef(b, id), { likedBy: on ? fs.arrayUnion(cid) : fs.arrayRemove(cid) }),
     addComment: (b, id, c) => fs.updateDoc(pRef(b, id), { comments: fs.arrayUnion(c) }),
-    deleteComment: (b, id, c) => fs.updateDoc(pRef(b, id), { comments: fs.arrayRemove(c) })
+    deleteComment: (b, id, c) => fs.updateDoc(pRef(b, id), { comments: fs.arrayRemove(c) }),
+    // 댓글 하나 고치기(승인 등): 최신 문서를 읽어 comments 배열을 통째로 다시 씀 (arrayRemove 불일치 방지)
+    updateComment: (b, id, commentId, patch) => fs.runTransaction(db, async tx => {
+      const s = await tx.get(pRef(b, id)); if (!s.exists()) return;
+      tx.update(pRef(b, id), { comments: (s.data().comments || []).map(c => c.id === commentId ? { ...c, ...patch } : c) });
+    }),
+    async putFile(meta, bytes, onProgress) {
+      const id = meta.id || uid(20), n = Math.max(1, Math.ceil(bytes.length / CHUNK));
+      for (let i = 0; i < n; i += PER_BATCH) {
+        const bt = fs.writeBatch(db);
+        for (let j = i; j < Math.min(n, i + PER_BATCH); j++) bt.set(chRef(id, j), { d: fs.Bytes.fromUint8Array(bytes.subarray(j * CHUNK, (j + 1) * CHUNK)) });
+        await bt.commit(); onProgress && onProgress(Math.min(n, i + PER_BATCH) / n);
+      }
+      // 조각을 다 올린 뒤 메타를 써서, 올리다 만 파일은 보이지 않게 함
+      await fs.setDoc(fRef(id), { name: String(meta.name || 'file'), type: String(meta.type || ''), size: +meta.size || bytes.length, chunks: n, createdAt: Date.now() });
+      return id;
+    },
+    async getFile(id, onProgress) {
+      const s = await fs.getDoc(fRef(id)); if (!s.exists()) throw new Error('파일을 찾을 수 없어요');
+      const meta = s.data(), n = meta.chunks || 0, parts = new Array(n); let next = 0, done = 0;
+      const worker = async () => {
+        while (next < n) {
+          const i = next++, c = await fs.getDoc(chRef(id, i));
+          if (!c.exists()) throw new Error('파일 조각이 빠져 있어요');
+          parts[i] = c.data().d.toUint8Array(); done++; onProgress && onProgress(done / n);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(4, n) }, worker));
+      return new Blob(parts, { type: meta.type || 'application/octet-stream' });
+    },
+    deleteFile
   };
 }
 
@@ -579,7 +811,7 @@ function openChangePw() {
     if (p1.length < 6) return toast('새 비밀번호는 6자 이상으로 해 주세요');
     if (p1 !== p2) return toast('새 비밀번호가 서로 달라요');
     $('#ok', m).disabled = true;
-    try { await S.store.changePassword(p0, p1); m.close(); toast('비밀번호를 바꾨어요'); }
+    try { await S.store.changePassword(p0, p1); m.close(); toast('비밀번호를 바꿨어요'); }
     catch (e) { $('#ok', m).disabled = false; toast(authMsg(e)); }
   };
 }
@@ -588,9 +820,10 @@ function goHome() { if (location.hash) location.hash = ''; else route(); }
 
 /* ---------------- 홈 ---------------- */
 function boardTile(x, teacher) {
-  const L = LAYOUTS[x.layout] || LAYOUTS.wall;
-  return `<a class="btile ${DARK.has(x.bg) ? 'dark' : ''}" href="#" data-open="${esc(x.id)}" style="background:${BGS[x.bg] || BGS.g1}">
-    <button class="rm" data-rm="${esc(x.id)}" title="${teacher ? '보드 삭제' : '목록에서 빼기·삭제 (교사 전용)'}">✕</button>
+  const L = LAYOUTS[x.layout] || LAYOUTS.wall, g = gOf(x), sel = teacher && HS.selecting, on = sel && HS.sel.has(x.id);
+  return `<a class="btile ${DARK.has(x.bg) ? 'dark' : ''}${on ? ' picked' : ''}" href="#" data-open="${esc(x.id)}" style="background:${BGS[x.bg] || BGS.g1}"${sel ? ` role="button" aria-pressed="${on}" title="눌러서 고르기"` : ''}>
+    ${sel ? `<span class="selbox">${on ? '✓' : ''}</span>` : `<button class="rm" data-rm="${esc(x.id)}" title="${teacher ? '보드 삭제' : '목록에서 빼기·삭제 (교사 전용)'}">✕</button>`}
+    ${teacher ? `<span class="gtag ${g ? '' : 'none'}">${g ? '📁 ' + esc(g) : '미분류'}</span>` : ''}
     <b>${esc(x.title)}</b><span class="meta">${L[1]} ${L[0]} · ${teacher ? `<span class="tcode">#${esc(x.code || x.id)}</span>` : '🔒 코드 입력 필요'}</span></a>`;
 }
 async function askBoardCode(id, title) {
@@ -617,15 +850,123 @@ async function deleteBoardFlow(id, title) {
 async function loadAllBoards() {
   const box = $('#allBoards'); if (!box) return;
   try {
-    const all = (await S.store.listBoards()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    HS.all = await S.store.listBoards();
     if (!$('#allBoards')) return;
-    box.innerHTML = all.length ? `<div class="bgrid">${all.map(x => boardTile(x, true)).join('')}</div>` : '<p class="muted">아직 보드가 없어요. 위에서 첫 보드를 만들어 보세요!</p>';
-    wireTiles(box, Object.fromEntries(all.map(x => [x.id, x])), true);
+    drawAllBoards();
   } catch (e) { box.innerHTML = `<p class="warn small">보드 목록을 불러오지 못했어요 (${esc(authMsg(e))})</p>`; }
+}
+// 교사 홈: 항목(카테고리)별로 묶어서 보여 주기 + 검색 + 항목 칩
+function drawAllBoards() {
+  const box = $('#allBoards'); if (!box) return;
+  const all = HS.all, groups = allGroups(all), byG = new Map([['', []], ...groups.map(g => [g, []])]);
+  all.forEach(b => byG.get(gOf(b)).push(b));
+  const byId = Object.fromEntries(all.map(x => [x.id, x]));
+  HS.sel.forEach(id => { if (!byId[id]) HS.sel.delete(id); });
+  if (HS.cat !== '*' && HS.cat !== NONE && !byG.has(HS.cat)) HS.cat = '*';
+  const chips = [['*', '📚 전체', all.length], ...groups.map(g => [g, '📁 ' + g, byG.get(g).length]), [NONE, '📂 미분류', byG.get('').length]];
+  const chipBox = $('#hChips');
+  if (chipBox) {
+    chipBox.innerHTML = chips.map(([k, n, c]) => `<button type="button" class="gchip ${HS.cat === k ? 'on' : ''}" data-cat="${esc(k)}">${esc(n)}<span>${c}</span></button>`).join('');
+    $$('[data-cat]', chipBox).forEach(b => b.onclick = () => { HS.cat = b.dataset.cat; drawAllBoards(); });
+  }
+  const dl = $('#grpList'); if (dl) dl.innerHTML = groupOptions(all);
+  const terms = HS.q.trim().toLowerCase().split(/\s+/).filter(Boolean), searching = terms.length > 0;
+  const match = b => { const h = [b.title, b.desc, b.code || b.id, gOf(b) || '미분류'].join(' ').toLowerCase(); return terms.every(t => h.includes(t)); };
+  const closed = new Set(LS.get('mp_gclosed', []));
+  const keys = [...groups, ''].filter(g => HS.cat === '*' || (HS.cat === NONE ? g === '' : g === HS.cat));
+  let total = 0;
+  const secs = keys.map(g => {
+    const list = byG.get(g).filter(match).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    total += list.length;
+    if (!list.length && (searching || (g === '' && HS.cat !== NONE))) return '';
+    const k = g || NONE, isClosed = !searching && closed.has(k);
+    return `<section class="gsec ${isClosed ? 'closed' : ''}"><button type="button" class="ghead" data-gt="${esc(k)}" aria-expanded="${!isClosed}" title="${searching ? '' : isClosed ? '펼치기' : '접기'}" ${searching ? 'disabled' : ''}><span class="caret">▾</span><span class="gname">${g ? '📁 ' + esc(g) : '📂 미분류'}</span><span class="gcount">보드 ${list.length}개</span>${isClosed ? '<span class="muted small">접혀 있어요 · 눌러서 펼치기</span>' : ''}</button>
+      ${list.length ? `<div class="bgrid">${list.map(x => boardTile(x, true)).join('')}</div>` : '<p class="muted small gempty">아직 이 항목에 보드가 없어요. ‘☑ 여러 보드 묶기’로 보드를 넣어 보세요.</p>'}</section>`;
+  }).join('');
+  if (!all.length) box.innerHTML = '<p class="muted">아직 보드가 없어요. 위에서 첫 보드를 만들어 보세요!</p>';
+  else if (searching && !total) box.innerHTML = `<div class="hempty">🔍 ‘${esc(HS.q.trim())}’에 맞는 보드가 없어요.<br><span class="muted small">다른 낱말로 찾거나, 위의 항목을 ‘전체’로 바꿔 보세요.</span></div>`;
+  else box.innerHTML = (searching ? `<p class="sresult">🔍 검색 결과 <b>${total}</b>개${HS.cat !== '*' ? ` <span class="muted small">(‘${esc(HS.cat === NONE ? '미분류' : HS.cat)}’ 항목 안에서)</span>` : ''}</p>` : '') + (secs || '<p class="muted">이 항목에는 아직 보드가 없어요.</p>');
+  $$('[data-gt]', box).forEach(b => b.onclick = () => {
+    const s = new Set(LS.get('mp_gclosed', [])), k = b.dataset.gt;
+    s.has(k) ? s.delete(k) : s.add(k); LS.set('mp_gclosed', [...s]); drawAllBoards();
+  });
+  wireTiles(box, byId, true);
+  drawBulkBar();
+}
+function drawBulkBar() {
+  const bar = $('#hBulkBar'), btn = $('#hBulk'); if (!bar || !btn) return;
+  btn.classList.toggle('primary', HS.selecting); btn.textContent = HS.selecting ? '✓ 묶기 끝내기' : '☑ 여러 보드 묶기';
+  bar.hidden = !HS.selecting;
+  if (!HS.selecting) { bar.innerHTML = ''; return; }
+  if (!$('#bkName', bar)) {
+    bar.innerHTML = `<b class="bkn">선택한 <span id="bkCount">0</span>개 →</b><input class="input" id="bkName" list="grpList" maxlength="30" placeholder="항목 고르기 또는 새 이름" autocomplete="off"><button class="btn primary" id="bkPut" type="button">넣기</button><button class="btn" id="bkOut" type="button">항목에서 빼기</button><span class="muted small" id="bkHint">보드를 눌러서 고르세요</span><span class="grow"></span><button class="btn sm" id="bkAll" type="button">보이는 보드 모두 선택</button><button class="btn sm" id="bkNone" type="button">선택 해제</button>`;
+    $('#bkPut', bar).onclick = () => bulkGroup($('#bkName', bar).value.trim().slice(0, 30), true);
+    $('#bkName', bar).onkeydown = e => { if (e.key === 'Enter') $('#bkPut', bar).click(); };
+    $('#bkOut', bar).onclick = () => bulkGroup('', false);
+    $('#bkAll', bar).onclick = () => { $$('#allBoards [data-open]').forEach(a => HS.sel.add(a.dataset.open)); drawAllBoards(); };
+    $('#bkNone', bar).onclick = () => { HS.sel.clear(); drawAllBoards(); };
+  }
+  $('#bkCount', bar).textContent = HS.sel.size;
+  $('#bkHint', bar).hidden = HS.sel.size > 0;
+}
+async function bulkGroup(name, put) {
+  const ids = [...HS.sel];
+  if (!ids.length) return toast('먼저 묶을 보드를 눌러서 골라 주세요');
+  if (put && !name) { toast('넣을 항목을 고르거나 새 이름을 입력해 주세요'); return $('#bkName')?.focus(); }
+  $$('#hBulkBar button').forEach(b => b.disabled = true);
+  try {
+    await Promise.all(ids.map(id => S.store.updateBoard(id, { group: put ? name : '' })));
+    if (put) rememberGroup(name);
+    toast(put ? `보드 ${ids.length}개를 ‘${name}’ 항목에 넣었어요` : `보드 ${ids.length}개를 항목에서 뺐어요 (미분류)`);
+    HS.sel.clear(); HS.selecting = false;
+  } catch (e) { toast('오류: ' + authMsg(e)); }
+  $$('#hBulkBar button').forEach(b => b.disabled = false);
+  await loadAllBoards();
+}
+function openGroups() {
+  const m = openModal(`<h2>📁 항목 관리</h2><p class="muted small" style="margin:0;line-height:1.6">항목은 보드를 묶어 두는 폴더예요. 항목을 지워도 안에 있던 보드는 지워지지 않고 ‘미분류’로 옮겨져요.</p>
+    <div class="gnew"><input class="input" id="g-new" maxlength="30" placeholder="새 항목 이름 (예: 3학년 국어, 1학기 프로젝트)" autocomplete="off"><button class="btn primary" id="g-add" type="button">＋ 만들기</button></div>
+    <div class="glist" id="g-list"></div>
+    <div class="mfoot"><button class="btn primary" data-close>닫기</button></div>`);
+  let gs = [], busy = false;
+  const cnt = g => HS.all.filter(b => gOf(b) === g).length;
+  const draw = () => {
+    gs = allGroups(HS.all);
+    $('#g-list', m).innerHTML = (gs.length ? gs.map((g, i) => `<div class="grow-row"><span class="gname">📁 ${esc(g)}</span><span class="gcount">보드 ${cnt(g)}개</span><span class="grow"></span><button class="btn sm" data-gren="${i}" type="button">✏️ 이름 바꾸기</button><button class="btn sm danger" data-gdel="${i}" type="button">삭제</button></div>`).join('') : '<p class="muted small">아직 만든 항목이 없어요. 위에서 첫 항목을 만들어 보세요.</p>')
+      + `<div class="grow-row none"><span class="gname">📂 미분류</span><span class="gcount">보드 ${cnt('')}개</span><span class="grow"></span><span class="muted small">항목이 없는 보드</span></div>`;
+  };
+  const run = async (f, done) => {
+    if (busy) return; busy = true; $$('#g-list button', m).forEach(b => b.disabled = true);
+    try { await f(); HS.all = await S.store.listBoards(); toast(done); } catch (e) { toast('오류: ' + authMsg(e)); }
+    busy = false; draw(); drawAllBoards();
+  };
+  const add = () => {
+    const v = $('#g-new', m).value.trim().slice(0, 30); if (!v) return $('#g-new', m).focus();
+    if (gs.includes(v)) return toast('이미 있는 항목이에요');
+    rememberGroup(v); $('#g-new', m).value = ''; draw(); drawAllBoards(); toast(`‘${v}’ 항목을 만들었어요`);
+  };
+  $('#g-add', m).onclick = add; $('#g-new', m).onkeydown = e => { if (e.key === 'Enter') add(); };
+  $('#g-list', m).addEventListener('click', async e => {
+    const r = e.target.closest('[data-gren]'), d = e.target.closest('[data-gdel]');
+    if (r) {
+      const old = gs[+r.dataset.gren], v = ((await askText(`‘${old}’ 이름 바꾸기`, '새 항목 이름', old)) || '').slice(0, 30).trim();
+      if (!v || v === old) return;
+      if (gs.includes(v) && !(await ask(`‘${esc(v)}’ 항목이 이미 있어요. 두 항목을 하나로 합칠까요?`, '합치기', false))) return;
+      const list = HS.all.filter(b => gOf(b) === old);
+      run(async () => { await Promise.all(list.map(b => S.store.updateBoard(b.id, { group: v }))); renameGroupLocal(old, v); }, `‘${old}’ → ‘${v}’ (보드 ${list.length}개)`);
+    }
+    if (d) {
+      const g = gs[+d.dataset.gdel], list = HS.all.filter(b => gOf(b) === g);
+      if (!(await ask(`<b>${esc(g)}</b> 항목을 지울까요?<br>안에 있는 보드 ${list.length}개는 지워지지 않고 ‘미분류’로 옮겨져요.`, '항목 삭제'))) return;
+      run(async () => { await Promise.all(list.map(b => S.store.updateBoard(b.id, { group: '' }))); renameGroupLocal(g, null); }, `‘${g}’ 항목을 지웠어요`);
+    }
+  });
+  draw(); setTimeout(() => $('#g-new', m).focus(), 30);
 }
 function wireTiles(root, byId, teacher) {
   $$('[data-open]', root).forEach(a => a.onclick = e => {
     e.preventDefault(); const x = byId[a.dataset.open]; if (!x) return;
+    if (teacher && HS.selecting) { HS.sel.has(x.id) ? HS.sel.delete(x.id) : HS.sel.add(x.id); return drawAllBoards(); }
     if (teacher) location.hash = 'b-' + (x.code || x.id); else askBoardCode(x.id, x.title);
   });
   $$('[data-rm]', root).forEach(b => b.onclick = async e => {
@@ -668,11 +1009,21 @@ function renderHome() {
       </div>
     </section>
     ${S.store.mode === 'local' ? setupNoticeHTML() : ''}
-    ${T ? `<section class="mine"><h2>전체 보드 <span class="muted small" style="font-weight:400">· 교사에게만 보여요 (코드 포함)</span></h2><div id="allBoards"><p class="muted">불러오는 중…</p></div></section>`
+    ${T ? `<section class="mine"><h2>전체 보드 <span class="muted small" style="font-weight:400">· 교사에게만 보여요 (코드 포함)</span></h2>
+      <div class="htool"><input class="input hsearch" id="hSearch" type="search" placeholder="🔍 보드 찾기 — 제목·설명·코드·항목" value="${esc(HS.q)}" autocomplete="off"><button class="btn" id="hGroups" type="button">📁 항목 관리</button><button class="btn" id="hBulk" type="button">☑ 여러 보드 묶기</button></div>
+      <div class="gchips" id="hChips"></div><div id="allBoards"><p class="muted">불러오는 중…</p></div><div class="bulkbar" id="hBulkBar" hidden></div><datalist id="grpList"></datalist></section>`
       : `<section class="mine" id="recent"><h2>최근 보드</h2>${list.length ? `<div class="bgrid">${list.map(x => boardTile(x, false)).join('')}</div><p class="muted small" style="margin-top:10px">🔒 보드에 들어가려면 보드 코드를 다시 입력해야 해요.</p>` : '<p class="muted">아직 들어가 본 보드가 없어요.</p>'}</section>`}
   </div>`;
   $('#newBoard').onclick = openCreate;
-  if (T) { $('#tPw').onclick = openChangePw; $('#tOut').onclick = teacherLogout; loadAllBoards(); }
+  if (T) {
+    $('#tPw').onclick = openChangePw; $('#tOut').onclick = teacherLogout;
+    HS.selecting = false; HS.sel.clear();
+    $('#hSearch').oninput = e => { HS.q = e.target.value; drawAllBoards(); };
+    $('#hSearch').onkeydown = e => { if (e.key === 'Escape' && e.target.value) { e.target.value = HS.q = ''; drawAllBoards(); } };
+    $('#hGroups').onclick = openGroups;
+    $('#hBulk').onclick = () => { HS.selecting = !HS.selecting; HS.sel.clear(); drawAllBoards(); };
+    loadAllBoards();
+  }
   else { $('#tIn').onclick = () => teacherLogin(); const r = $('#recent'); if (r) wireTiles(r, Object.fromEntries(list.map(x => [x.id, x])), false); }
   fillHomeQR();
   $('#homeQr').onclick = $('#homeQrBig').onclick = openSiteQR;
@@ -696,6 +1047,7 @@ async function openCreate() {
   const m = openModal(`<h2>새 보드 만들기</h2>
     <label class="fl">보드 제목</label><input class="input" id="c-title" maxlength="80" placeholder="예: 3학년 2반 독서 감상 나누기">
     <label class="fl">설명 (선택)</label><textarea class="input" id="c-desc" rows="2" maxlength="300" placeholder="학생들에게 보여줄 안내 문구"></textarea>
+    <label class="fl">항목 <span class="muted small" style="font-weight:400">— 보드를 묶어 두는 폴더 (선택, 비워 두면 미분류)</span></label><input class="input" id="c-group" list="c-glist" maxlength="30" placeholder="예: 3학년 국어" autocomplete="off" value="${esc(HS.cat !== '*' && HS.cat !== NONE ? HS.cat : '')}"><datalist id="c-glist">${groupOptions(HS.all)}</datalist>
     <label class="fl">레이아웃</label><div class="layouts" id="c-lay">${layoutOptions(layout)}</div>
     <label class="fl">배경</label><div class="swatches bgs" id="c-bg">${bgOptions(bg)}</div>
     <p class="muted small" style="margin:14px 0 0">보드 코드는 자동으로 만들어지고, 나중에 보드 설정에서 원하는 코드로 바꿀 수 있어요.</p>
@@ -708,11 +1060,12 @@ async function openCreate() {
     $('#c-ok', m).disabled = true;
     try {
       const code = await newCode(), id = uid(20);
-      const data = { title, desc: $('#c-desc', m).value.trim(), layout, bg, reaction: 'like', allowComments: true, moderation: false, locked: false, showAuthor: true,
+      const group = $('#c-group', m).value.trim().slice(0, 30);
+      const data = { title, desc: $('#c-desc', m).value.trim(), group, layout, bg, reaction: 'like', allowComments: true, moderation: false, locked: false, showAuthor: true,
         sections: [{ id: uid(6), name: '주제 1' }, { id: uid(6), name: '주제 2' }, { id: uid(6), name: '주제 3' }],
         code, createdBy: S.cid, createdAt: Date.now() };
       await S.store.createBoard(id, data);
-      addMyBoard(id, data);
+      addMyBoard(id, data); rememberGroup(group);
       m.close(); location.hash = 'b-' + code;
     } catch (err) { $('#c-ok', m).disabled = false; toast('만들기 실패: ' + authMsg(err)); }
   };
@@ -732,7 +1085,7 @@ function openBoard(id, code) {
     if (b.code && b.code !== S.code && S.admin) { S.code = b.code; history.replaceState(null, '', '#b-' + b.code); }
     document.title = b.title + ' · 우리반 보드';
     addMyBoard(id, b);
-    const key = JSON.stringify([b.title, b.desc, b.bg, b.locked, b.moderation, S.admin, S.code]);
+    const key = JSON.stringify([b.title, b.desc, b.bg, b.locked, b.moderation, S.admin, S.code, commentPolicy(b).mode]);
     if (key !== S.shellKey) { S.shellKey = key; renderBoardShell(); } else renderPosts();
     renderDetail();
     if (first) { first = false; if (!S.name) askName(); }
@@ -757,7 +1110,7 @@ function renderBoardShell() {
       ${S.admin ? `<button class="btn hide-sm" id="btnExport">⬇ 내보내기</button><button class="btn primary" id="btnSettings">⚙ 설정</button>` : `<button class="btn" id="btnTeacher">🧑‍🏫 교사</button>`}
     </header>
     <section class="bintro"><h1>${esc(b.title)}</h1>${b.desc ? `<p>${esc(b.desc)}</p>` : ''}
-      <div class="chips">${S.admin ? '<span class="chip admin">교사 모드</span>' : ''}${b.locked ? '<span class="chip">🔒 잠김 · 새 게시 불가</span>' : ''}${b.moderation ? '<span class="chip">🛡 선생님 승인 후 공개</span>' : ''}${S.store.mode === 'local' ? '<span class="chip">🧪 데모 모드</span>' : ''}</div></section>
+      <div class="chips">${S.admin ? '<span class="chip admin">교사 모드</span>' : ''}${b.locked ? '<span class="chip">🔒 잠김 · 새 게시 불가</span>' : ''}${b.moderation ? '<span class="chip">🛡 선생님 승인 후 공개</span>' : ''}${{ approve: '<span class="chip">💬 댓글은 승인 후 공개</span>', teacher: '<span class="chip">💬 선생님만 댓글</span>', off: '<span class="chip">💬 댓글 꺼짐</span>' }[commentPolicy(b).mode] || ''}${S.store.mode === 'local' ? '<span class="chip">🧪 데모 모드</span>' : ''}</div></section>
     <main class="posts" id="posts"></main>
     ${canPost() ? '<button class="fab" id="fab" title="새 게시물">＋</button>' : ''}
   </div>`;
@@ -810,12 +1163,12 @@ function cardHTML(p) {
   const b = S.board, canEdit = S.admin || p.clientId === S.cid, L = b.layout;
   const pos = L === 'canvas' ? ` style="left:${p._x}px;top:${p._y}px;background:${COLORS[p.color] || '#fff'}"` : ` style="background:${COLORS[p.color] || '#fff'}"`;
   const tools = canEdit ? `<div class="c-tools">${S.admin && p.approved === false ? '<button class="tool" data-act="approve" title="승인">✅</button>' : ''}${S.admin ? `<button class="tool" data-act="pin" title="${p.pinned ? '고정 해제' : '맨 위 고정'}">📌</button>` : ''}<button class="tool" data-act="edit" title="수정">✏️</button><button class="tool" data-act="del" title="삭제">🗑</button></div>` : '';
-  const nC = (p.comments || []).length;
+  const cp = commentPolicy(b), vis = (p.comments || []).filter(cmVisible), nC = vis.length, pendC = S.admin ? vis.filter(c => c.approved === false).length : 0;
   const card = `<article class="card ${p.approved === false ? 'pending' : ''}" data-id="${p.id}"${pos}${L === 'shelf' && canEdit ? ' draggable="true"' : ''}>${tools}
     ${safeImg(p.image) ? mediaHTML({ image: p.image }) : ''}
-    <div class="c-body">${authorHTML(p)}${p.title ? `<div class="c-title">${esc(p.title)}</div>` : ''}${p.body ? `<div class="c-text">${linkify(p.body)}</div>` : ''}${linkHTML(p)}</div>
+    <div class="c-body">${authorHTML(p)}${p.title ? `<div class="c-title">${esc(p.title)}</div>` : ''}${p.body ? `<div class="c-text">${linkify(p.body)}</div>` : ''}${linkHTML(p)}${fileChipHTML(p.file)}</div>
     ${ytId(p.link) ? mediaHTML({ link: p.link }) : ''}
-    <div class="c-foot">${reactHTML(p)}${b.allowComments !== false ? `<span class="cmt">💬 ${nC || ''}</span>` : ''}</div></article>`;
+    <div class="c-foot">${reactHTML(p)}${cp.mode !== 'off' ? `<span class="cmt">💬 ${nC || ''}</span>${pendC ? `<span class="tag pend">댓글 대기 ${pendC}</span>` : ''}` : ''}</div></article>`;
   if (L === 'timeline') return `<div class="tl-item" data-id="${p.id}"><span class="tl-date">${fullDate(p.createdAt)}</span>${card}</div>`;
   return card;
 }
@@ -866,10 +1219,16 @@ async function postAction(act, p) {
   const B = S.boardId;
   try {
     if (act === 'edit') return openEditor(p);
-    if (act === 'del') { if (await ask('이 게시물을 삭제할까요? 되돌릴 수 없어요.', '삭제')) { await S.store.deletePost(B, p.id); S.detail?.m.close(); toast('삭제했어요'); } return; }
+    if (act === 'del') { if (await ask(`이 게시물을 삭제할까요?${safeFile(p.file) ? ' 첨부 파일도 함께 지워져요.' : ''} 되돌릴 수 없어요.`, '삭제')) { await removePost(p); S.detail?.m.close(); toast('삭제했어요'); } return; }
     if (act === 'pin') return S.store.updatePost(B, p.id, { pinned: !p.pinned });
     if (act === 'approve') { await S.store.updatePost(B, p.id, { approved: true }); return toast('승인했어요'); }
   } catch (e) { toast('오류: ' + e.message); }
+}
+// 게시물 삭제 + (교사일 때) 첨부 파일도 정리. 파일 정리 실패는 무시
+async function removePost(p) {
+  await S.store.deletePost(S.boardId, p.id);
+  const f = safeFile(p.file);
+  if (f && S.admin && S.store.deleteFile) S.store.deleteFile(f.id).catch(e => console.warn('파일 정리 실패', e));
 }
 async function handleReact(e, p) {
   const B = S.boardId;
@@ -884,6 +1243,7 @@ function wirePosts(area) {
     const card = e.target.closest('.card'); if (!card) return;
     const p = S.posts.find(x => x.id === card.dataset.id); if (!p) return;
     const t = e.target.closest('[data-act]'); if (t) { e.stopPropagation(); return postAction(t.dataset.act, p); }
+    if (e.target.closest('[data-file]')) { e.stopPropagation(); return openFile(p.file); }
     if (e.target.closest('[data-like],[data-star]')) { e.stopPropagation(); return handleReact(e, p).catch(err => toast('오류: ' + err.message)); }
     if (e.target.closest('a,iframe')) return;
     if (S.justDragged) return;
@@ -959,14 +1319,17 @@ async function openEditor(post, sectionId) {
   if (!S.name && !(await askName())) return;
   const b = S.board, isNew = !post;
   const secs = b.sections || [];
-  const st = { image: post?.image || '', color: post?.color || 'white', sectionId: post?.sectionId || sectionId || secs[0]?.id || '' };
+  const st = { image: post?.image || '', color: post?.color || 'white', sectionId: post?.sectionId || sectionId || secs[0]?.id || '', file: safeFile(post?.file), newFile: null };
+  const canFile = S.admin && !!S.store.putFile;
   const m = openModal(`<h2>${isNew ? '새 게시물' : '게시물 수정'}</h2>
     ${b.layout === 'shelf' && secs.length ? `<label class="fl">섹션</label><select class="input" id="e-sec">${secs.map(s => `<option value="${s.id}" ${s.id === st.sectionId ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select>` : ''}
     <input class="input e-title" id="e-title" placeholder="제목" maxlength="120" value="${esc(post?.title || '')}">
     <textarea class="input e-body" id="e-body" rows="5" placeholder="내용을 입력하세요. 사진을 복사해서 붙여넣기(Ctrl+V)해도 돼요." maxlength="5000">${esc(post?.body || '')}</textarea>
     <div id="e-imgbox"></div>
+    <div id="e-filebox"></div>
     <div class="attach">
       <label class="btn">📷 사진<input type="file" accept="image/*" id="e-file" hidden></label>
+      ${canFile ? '<label class="btn" title="PDF·PPT·ZIP 등 25MB까지 (선생님만)">📎 파일<input type="file" id="e-att" hidden></label>' : ''}
       <button class="btn" id="e-draw" type="button">✏️ 그리기</button>
       <button class="btn" id="e-linkbtn" type="button">🔗 링크 / 유튜브</button>
     </div>
@@ -977,40 +1340,81 @@ async function openEditor(post, sectionId) {
   const drawImg = () => { imgbox.innerHTML = st.image ? `<div class="imgprev"><img src="${safeImg(st.image)}"><button class="btn sm" id="e-rmimg" type="button">✕ 사진 빼기</button></div>` : ''; const r = $('#e-rmimg', m); if (r) r.onclick = () => { st.image = ''; drawImg(); }; };
   const setImage = async src => { try { imgbox.innerHTML = '<p class="muted small">사진 처리 중…</p>'; st.image = await compressImage(src); } catch (e) { toast(e.message); } drawImg(); };
   drawImg();
+  const filebox = $('#e-filebox', m);
+  const drawFile = () => {
+    const nf = st.newFile, f = nf ? { id: 'new', name: nf.name, type: nf.type || guessType(nf.name), size: nf.size } : st.file;
+    filebox.innerHTML = f ? `<div class="fprev">${fileChipHTML(f, false)}${canFile || st.newFile ? '<button class="btn sm" id="e-rmfile" type="button">✕ 파일 빼기</button>' : ''}</div>${nf ? '<p class="muted small" style="margin:4px 0 0">📎 저장(게시)할 때 올라가요</p>' : ''}` : '';
+    const r = $('#e-rmfile', m); if (r) r.onclick = () => { st.newFile = null; st.file = null; drawFile(); };
+  };
+  const pickAttach = f => {
+    if (!f) return;
+    if (f.size > MAX_FILE) return toast(`파일은 25MB까지 올릴 수 있어요 (지금 ${fmtSize(f.size)})`);
+    st.newFile = f; drawFile();
+  };
+  drawFile();
+  if ($('#e-att', m)) $('#e-att', m).onchange = e => { pickAttach(e.target.files[0]); e.target.value = ''; };
   $('#e-file', m).onchange = e => { const f = e.target.files[0]; if (f) setImage(f); e.target.value = ''; };
   $('#e-draw', m).onclick = async () => { const d = await openDraw(); if (d) setImage(d); };
   $('#e-linkbtn', m).onclick = () => { const l = $('#e-link', m); l.style.display = 'block'; l.focus(); };
   pickGroup($('#e-colors', m), 'c', v => st.color = v);
   m.addEventListener('paste', e => { const it = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/')); if (it) { e.preventDefault(); setImage(it.getAsFile()); } });
   m.addEventListener('dragover', e => e.preventDefault());
-  m.addEventListener('drop', e => { const f = [...(e.dataTransfer?.files || [])].find(f => f.type.startsWith('image/')); if (f) { e.preventDefault(); setImage(f); } });
+  m.addEventListener('drop', e => {
+    const fl = [...(e.dataTransfer?.files || [])], f = fl.find(f => f.type.startsWith('image/'));
+    if (f) { e.preventDefault(); setImage(f); } else if (canFile && fl[0]) { e.preventDefault(); pickAttach(fl[0]); }
+  });
   setTimeout(() => $('#e-title', m).focus(), 30);
   $('#e-save', m).onclick = async () => {
     let link = $('#e-link', m).value.trim(); if (link && !/^https?:\/\//i.test(link)) link = 'https://' + link;
     const data = { title: $('#e-title', m).value.trim(), body: $('#e-body', m).value.trim(), link, image: st.image || '', color: st.color, sectionId: $('#e-sec', m)?.value || st.sectionId || '' };
-    if (!data.title && !data.body && !data.link && !data.image) return toast('내용을 입력해 주세요');
-    $('#e-save', m).disabled = true;
+    if (!data.title && !data.body && !data.link && !data.image && !st.file && !st.newFile) return toast('내용을 입력해 주세요');
+    const saveBtn = $('#e-save', m), saveText = saveBtn.textContent, oldFile = safeFile(post?.file);
+    saveBtn.disabled = true;
     try {
+      if (st.newFile) {
+        const nf = st.newFile, meta = { id: uid(20), name: nf.name, type: nf.type || guessType(nf.name), size: nf.size };
+        saveBtn.textContent = '파일 올리는 중… 0%';
+        meta.id = await S.store.putFile(meta, new Uint8Array(await nf.arrayBuffer()), r => saveBtn.textContent = `파일 올리는 중… ${Math.round(r * 100)}%`);
+        data.file = meta; st.file = meta; st.newFile = null;
+      } else if (st.file) data.file = st.file;
+      else if (!isNew && oldFile) data.file = S.store.del();
       if (isNew) {
         Object.assign(data, { author: S.name, clientId: S.cid, createdAt: Date.now(), likedBy: [], ratings: {}, comments: [], pinned: false, approved: !b.moderation || S.admin });
         if (b.layout === 'canvas') { const lay = $('.layout-canvas'); data.x = Math.round((lay?.scrollLeft || 0) + 30 + Math.random() * Math.max(100, (lay?.clientWidth || 800) - 330)); data.y = Math.round((lay?.scrollTop || 0) + 30 + Math.random() * 200); }
         await S.store.addPost(S.boardId, uid(), data);
         toast(data.approved ? '게시했어요 ✨' : '제출했어요. 선생님 승인을 기다리는 중이에요');
-      } else { data.updatedAt = Date.now(); await S.store.updatePost(S.boardId, post.id, data); toast('저장했어요'); }
+      } else {
+        data.updatedAt = Date.now(); await S.store.updatePost(S.boardId, post.id, data); toast('저장했어요');
+        if (oldFile && oldFile.id !== data.file?.id && S.admin && S.store.deleteFile) S.store.deleteFile(oldFile.id).catch(e => console.warn('파일 정리 실패', e));
+      }
       m.close();
-    } catch (e) { $('#e-save', m).disabled = false; toast('저장 실패: ' + e.message); }
+    } catch (e) { saveBtn.disabled = false; saveBtn.textContent = saveText; drawFile(); toast('저장 실패: ' + (e.message || e)); }
   };
 }
 
 /* ---------------- 게시물 크게 보기 + 댓글 ---------------- */
 function openDetail(id) {
-  const m = openModal(`<div class="detail" id="detail"><div class="d-main"></div><div class="d-side"><h3>💬 댓글</h3><div class="d-comments"></div><div class="d-cbox"></div></div></div>`, { wide: true });
-  S.detail = { id, m, mainHtml: null, cHtml: null, cboxKey: null };
+  const m = openModal(`<div class="detail" id="detail"><div class="d-main"></div><div class="d-side"><h3>💬 댓글 <span class="d-ccount muted small" style="font-weight:500"></span></h3><div class="d-ctools"></div><div class="d-comments"></div><div class="d-cbox"></div></div></div>`, { wide: true });
+  S.detail = { id, m, mainHtml: null, cHtml: null, cboxKey: null, tHtml: null, sending: false };
   m.onclose = () => { S.detail = null; };
   $('#detail', m).addEventListener('click', async e => {
     const p = S.posts.find(x => x.id === id); if (!p) return;
+    const B = S.boardId;
+    if (e.target.closest('[data-file]')) return openFile(p.file);
     const t = e.target.closest('[data-act]'); if (t) return postAction(t.dataset.act, p);
-    const dc = e.target.closest('[data-dc]'); if (dc) { const c = (p.comments || []).find(x => x.id === dc.dataset.dc); if (c && await ask('댓글을 삭제할까요?', '삭제')) S.store.deleteComment(S.boardId, p.id, c).catch(err => toast(err.message)); return; }
+    const dc = e.target.closest('[data-dc]'); if (dc) { const c = (p.comments || []).find(x => x.id === dc.dataset.dc); if (c && await ask('댓글을 삭제할까요?', '삭제')) S.store.deleteComment(B, p.id, c).catch(err => toast(err.message)); return; }
+    const ca = e.target.closest('[data-ca]');
+    if (ca && S.admin) { ca.disabled = true; try { await S.store.updateComment(B, p.id, ca.dataset.ca, { approved: true }); toast('댓글을 승인했어요'); } catch (err) { ca.disabled = false; toast('오류: ' + err.message); } return; }
+    if (e.target.closest('[data-cappall]') && S.admin) {
+      const ids = (p.comments || []).filter(c => c.approved === false).map(c => c.id);
+      try { for (const x of ids) await S.store.updateComment(B, p.id, x, { approved: true }); toast(`댓글 ${ids.length}개를 승인했어요`); } catch (err) { toast('오류: ' + err.message); }
+      return;
+    }
+    if (e.target.closest('[data-cclear]') && S.admin) {
+      const n = (p.comments || []).length;
+      if (n && await ask(`이 게시물의 댓글 ${n}개를 모두 삭제할까요?<br>승인 대기 댓글도 함께 지워지고, 되돌릴 수 없어요.`, '모두 삭제')) S.store.updatePost(B, p.id, { comments: [] }).then(() => toast('댓글을 모두 삭제했어요'), err => toast('오류: ' + err.message));
+      return;
+    }
     handleReact(e, p).catch(err => toast('오류: ' + err.message));
   });
   renderDetail();
@@ -1020,26 +1424,66 @@ function renderDetail() {
   const p = S.posts.find(x => x.id === d.id); if (!p) { d.m.close(); return; }
   if (p.approved === false && !S.admin && p.clientId !== S.cid) { d.m.close(); return; }
   const b = S.board, canEdit = S.admin || p.clientId === S.cid;
-  const main = `${authorHTML(p)}${p.title ? `<div class="d-title">${esc(p.title)}</div>` : ''}${p.body ? `<div class="d-text">${linkify(p.body)}</div>` : ''}${mediaHTML(p)}${linkHTML(p)}
+  const main = `${authorHTML(p)}${p.title ? `<div class="d-title">${esc(p.title)}</div>` : ''}${p.body ? `<div class="d-text">${linkify(p.body)}</div>` : ''}${mediaHTML(p)}${linkHTML(p)}${fileChipHTML(p.file)}
     <div class="c-foot" style="padding:12px 0 0">${reactHTML(p)}<span class="grow" style="flex:1"></span>${canEdit ? `${S.admin && p.approved === false ? '<button class="btn sm primary" data-act="approve">✅ 승인</button>' : ''}${S.admin ? `<button class="btn sm" data-act="pin">📌 ${p.pinned ? '고정 해제' : '고정'}</button>` : ''}<button class="btn sm" data-act="edit">✏️ 수정</button><button class="btn sm danger" data-act="del">🗑 삭제</button>` : ''}</div>`;
   const mainEl = $('.d-main', d.m); mainEl.style.background = COLORS[p.color] || '#fff';
   if (d.mainHtml !== main) { d.mainHtml = main; mainEl.innerHTML = main; }
-  const allow = b.allowComments !== false;
-  const cs = (p.comments || []).slice().sort((a, c) => a.at - c.at);
-  const ch = cs.length ? cs.map(c => `<div class="cm"><div class="who"><span><span class="avatar" style="background:${hue(c.author)};width:18px;height:18px;font-size:10px;vertical-align:-4px">${esc(String(c.author || '?').slice(0, 1))}</span> ${esc(c.author)} <span class="muted" style="font-weight:400">· ${ago(c.at)}</span></span>${S.admin || c.cid === S.cid ? `<button data-dc="${esc(c.id)}" title="삭제">삭제</button>` : ''}</div><div class="txt">${linkify(c.text)}</div></div>`).join('') : `<p class="muted small">${allow ? '첫 댓글을 남겨 보세요.' : ''}</p>`;
+  const cp = commentPolicy(b), allow = cp.mode !== 'off';
+  const all = (p.comments || []).slice().sort((a, c) => a.at - c.at), cs = all.filter(cmVisible);
+  const pend = all.filter(c => c.approved === false).length, mine = all.filter(c => c.cid === S.cid).length;
+  const ch = cs.length ? cs.map(c => {
+    const pd = c.approved === false;
+    return `<div class="cm ${pd ? 'pend' : ''}"><div class="who"><span><span class="avatar" style="background:${hue(c.author)};width:18px;height:18px;font-size:10px;vertical-align:-4px">${esc(String(c.author || '?').slice(0, 1))}</span> ${esc(c.author)} <span class="muted" style="font-weight:400">· ${ago(c.at)}</span>${pd ? ' <span class="tag pend">승인 대기</span>' : ''}</span>${(S.admin && !pd) || (!S.admin && c.cid === S.cid) ? `<button data-dc="${esc(c.id)}" title="삭제">삭제</button>` : ''}</div><div class="txt">${linkify(c.text)}</div>${pd ? (S.admin ? `<div class="cm-acts"><button class="btn sm primary" data-ca="${esc(c.id)}" type="button">✅ 승인</button><button class="btn sm danger" data-dc="${esc(c.id)}" type="button">삭제</button></div>` : '<div class="cm-note">🛡 선생님이 승인하면 친구들에게 보여요</div>') : ''}</div>`;
+  }).join('') : `<p class="muted small">${allow ? (cp.mode === 'teacher' && !S.admin ? '아직 선생님 댓글이 없어요.' : '첫 댓글을 남겨 보세요.') : ''}</p>`;
   const cEl = $('.d-comments', d.m);
   if (d.cHtml !== ch) { const atBottom = cEl.scrollHeight - cEl.scrollTop - cEl.clientHeight < 40; d.cHtml = ch; cEl.innerHTML = ch; if (atBottom) cEl.scrollTop = cEl.scrollHeight; }
-  const ck = String(allow);
+  $('.d-ccount', d.m).textContent = cs.length ? cs.length + '개' + (S.admin && pend ? ` · 승인 대기 ${pend}` : '') : '';
+  const th = S.admin && all.length ? `${pend ? `<button class="btn sm primary" data-cappall type="button">✅ 대기 댓글 모두 승인 (${pend})</button>` : ''}<button class="btn sm danger" data-cclear type="button">🗑 이 게시물 댓글 모두 삭제</button>` : '';
+  if (d.tHtml !== th) { d.tHtml = th; $('.d-ctools', d.m).innerHTML = th; }
+  const ck = JSON.stringify([cp, S.admin]);
   if (d.cboxKey !== ck) {
-    d.cboxKey = ck; const box = $('.d-cbox', d.m);
-    box.innerHTML = allow ? `<form class="d-cform"><input class="input" placeholder="댓글 달기…" maxlength="500"><button class="btn primary">등록</button></form>` : '<p class="muted small">이 보드는 댓글이 꺼져 있어요.</p>';
+    d.cboxKey = ck; const box = $('.d-cbox', d.m), max = S.admin ? 500 : cp.maxLen;
+    box.innerHTML = !allow ? '<p class="muted small">이 보드는 댓글이 꺼져 있어요.</p>'
+      : cp.mode === 'teacher' && !S.admin ? '<p class="cm-lock">🧑‍🏫 선생님만 댓글을 쓸 수 있어요</p>'
+      : `<form class="d-cform"><input class="input" placeholder="${cp.mode === 'teacher' ? '선생님 댓글 달기…' : '댓글 달기…'}" maxlength="${max}"><button class="btn primary">등록</button></form><div class="chint"><span class="ch-hint"></span><span class="ch-cnt">0/${max}</span></div>`;
     const f = $('form', box);
-    if (f) f.onsubmit = async e => {
-      e.preventDefault(); const inp = $('input', f), text = inp.value.trim(); if (!text) return;
-      if (!S.name && !(await askName())) return;
-      try { await S.store.addComment(S.boardId, d.id, { id: uid(10), author: S.name, cid: S.cid, text, at: Date.now() }); inp.value = ''; } catch (err) { toast('오류: ' + err.message); }
-    };
+    if (f) {
+      const inp = $('input', f), cnt = $('.ch-cnt', box);
+      inp.oninput = () => { cnt.textContent = `${inp.value.length}/${max}`; cnt.classList.toggle('full', inp.value.length >= max); };
+      f.onsubmit = e => { e.preventDefault(); submitComment(d, inp, () => inp.oninput()); };
+    }
   }
+  const hint = $('.ch-hint', d.m);
+  if (hint) hint.textContent = S.admin ? (cp.mode === 'teacher' ? '🧑‍🏫 학생은 읽기만 해요' : '🧑‍🏫 선생님은 제한 없음 · 학생: ' + policyHint(cp)) : policyHint(cp, cp.perPost ? mine : null);
+}
+// 댓글 등록: 학생은 댓글 규칙(글자 수·개수·간격·나쁜 말)을 따르고, 선생님은 제한 없음
+async function submitComment(d, inp, refresh) {
+  const text = inp.value.trim(); if (!text || d.sending) return;
+  const p = S.posts.find(x => x.id === d.id); if (!p || !S.board) return;
+  const cp = commentPolicy(S.board), B = S.boardId;
+  if (!S.admin) {
+    if (cp.mode === 'off') return toast('이 보드는 댓글이 꺼져 있어요');
+    if (cp.mode === 'teacher') return toast('🧑‍🏫 선생님만 댓글을 쓸 수 있어요');
+    if (text.length > cp.maxLen) return toast(`✏️ 댓글은 ${cp.maxLen}자까지 쓸 수 있어요 (지금 ${text.length}자)`);
+    const mine = (p.comments || []).filter(c => c.cid === S.cid).length;
+    if (cp.perPost && mine >= cp.perPost) return toast(`🙂 이 게시물에는 댓글을 ${cp.perPost}개까지 쓸 수 있어요`);
+    if (cp.cooldown) {
+      const left = Math.ceil(((LS.get('mp_lastc', {})[B] || 0) + cp.cooldown * 1000 - Date.now()) / 1000);
+      if (left > 0) return toast(`⏳ ${left}초 뒤에 다시 쓸 수 있어요. 천천히 생각해 볼까요?`);
+    }
+    if (cp.filter && hasBadWord(text)) return toast('🌱 친구가 속상할 수 있는 말이 있어요. 고운 말로 바꿔서 다시 써 볼까요?');
+  }
+  if (!S.name && !(await askName())) return;
+  const c = { id: uid(10), author: S.name, cid: S.cid, text, at: Date.now() };
+  if (!S.admin && cp.mode === 'approve') c.approved = false;
+  d.sending = true;
+  try {
+    await S.store.addComment(B, p.id, c);
+    if (!S.admin) { const lc = LS.get('mp_lastc', {}); lc[B] = c.at; LS.set('mp_lastc', lc); }
+    inp.value = ''; refresh && refresh();
+    if (c.approved === false) toast('댓글을 보냈어요 🛡 선생님이 승인하면 친구들에게 보여요');
+  } catch (err) { toast('오류: ' + err.message); }
+  d.sending = false;
 }
 
 /* ---------------- 공유 / QR ---------------- */
@@ -1097,7 +1541,7 @@ function openSlides() {
     const p = ps[i];
     ov.innerHTML = `<div class="s-count">${i + 1} / ${ps.length}</div><button class="s-x" title="닫기 (Esc)">✕</button>
       <button class="s-nav prev" ${i ? '' : 'disabled style="opacity:.3"'}>‹</button>
-      <div class="s-card" style="background:${COLORS[p.color] || '#fff'}">${authorHTML(p)}${p.title ? `<div class="d-title">${esc(p.title)}</div>` : ''}${p.body ? `<div class="d-text">${linkify(p.body)}</div>` : ''}${mediaHTML(p)}${linkHTML(p)}</div>
+      <div class="s-card" style="background:${COLORS[p.color] || '#fff'}">${authorHTML(p)}${p.title ? `<div class="d-title">${esc(p.title)}</div>` : ''}${p.body ? `<div class="d-text">${linkify(p.body)}</div>` : ''}${mediaHTML(p)}${linkHTML(p)}${fileChipHTML(p.file, false)}</div>
       <button class="s-nav next" ${i < ps.length - 1 ? '' : 'disabled style="opacity:.3"'}>›</button>`;
     $('.s-x', ov).onclick = close; $('.prev', ov).onclick = () => go(-1); $('.next', ov).onclick = () => go(1);
   };
@@ -1114,15 +1558,28 @@ const tog = (id, text, on) => `<label class="tog"><input type="checkbox" id="${i
 function openSettings() {
   const b = S.board; let layout = LAYOUTS[b.layout] ? b.layout : 'wall', bg = b.bg || 'g1';
   let sections = JSON.parse(JSON.stringify(b.sections || []));
+  const cp = commentPolicy(b); let cmode = cp.mode;
   const m = openModal(`<h2>⚙ 보드 설정</h2>
     <label class="fl">제목</label><input class="input" id="s-title" value="${esc(b.title)}" maxlength="80">
     <label class="fl">설명</label><textarea class="input" id="s-desc" rows="2" maxlength="300">${esc(b.desc || '')}</textarea>
+    <label class="fl">항목 <span class="muted small" style="font-weight:400">— 홈 화면에서 이 보드를 묶어 보여 줄 폴더 (비우면 미분류)</span></label><input class="input" id="s-group" list="s-glist" maxlength="30" value="${esc(gOf(b))}" placeholder="예: 3학년 국어" autocomplete="off"><datalist id="s-glist">${groupOptions(HS.all)}</datalist>
     <label class="fl">레이아웃</label><div class="layouts" id="s-lay">${layoutOptions(layout)}</div>
     <label class="fl">배경</label><div class="swatches bgs" id="s-bg">${bgOptions(bg)}</div>
     <label class="fl">섹션 <span class="muted small" style="font-weight:400">— 셸프 레이아웃에서 열로 보여요</span></label><div id="s-secs"></div><button class="btn sm" id="s-addsec" type="button">＋ 섹션 추가</button>
     <label class="fl">반응 방식</label><select class="input" id="s-react"><option value="like">♥ 좋아요</option><option value="star">★ 별점 (1~5)</option><option value="none">없음</option></select>
+    <div class="cpol"><h4>💬 댓글 설정</h4>
+      <div class="cmodes" id="s-cmode" role="radiogroup" aria-label="댓글 방식">${Object.entries(CP_MODES).map(([k, [i, n, dsc]]) => `<button type="button" class="lopt ${k === cmode ? 'on' : ''}" data-cm="${k}" role="radio" aria-checked="${k === cmode}"><i>${i}</i><b>${n}</b><span>${dsc}</span></button>`).join('')}</div>
+      <div id="s-cmore">
+        <div class="copts">
+          <label>✏️ 글자 수 제한<select class="input" id="s-clen">${CP_LEN.map(v => `<option value="${v}" ${v === cp.maxLen ? 'selected' : ''}>${v}자까지</option>`).join('')}</select></label>
+          <label>🔢 게시물당 학생 댓글 수<select class="input" id="s-cper">${CP_PER.map(v => `<option value="${v}" ${v === cp.perPost ? 'selected' : ''}>${v ? `한 사람당 ${v}개까지` : '제한 없음'}</option>`).join('')}</select></label>
+          <label>⏱ 연속 댓글 간격<select class="input" id="s-ccd">${CP_CD.map(v => `<option value="${v}" ${v === cp.cooldown ? 'selected' : ''}>${v ? `${v}초 기다리기` : '바로 쓸 수 있음'}</option>`).join('')}</select></label>
+        </div>
+        <div class="toggles" style="margin-top:12px">${tog('s-cfilter', '🌱 나쁜 말 거르기 — 욕설·비속어가 있으면 올리지 않고 부드럽게 알려 줘요', cp.filter)}</div>
+      </div>
+      <p class="muted small" style="margin:10px 0 0">ℹ️ 선생님은 이 제한과 관계없이 언제나 댓글을 쓸 수 있어요.</p>
+    </div>
     <div class="toggles">
-      ${tog('s-comments', '댓글 허용', b.allowComments !== false)}
       ${tog('s-author', '작성자 이름 공개 (끄면 학생에게 익명으로 보임)', b.showAuthor !== false)}
       ${tog('s-mod', '검토 모드 — 선생님이 승인한 게시물만 공개', !!b.moderation)}
       ${tog('s-lock', '보드 잠금 — 학생 새 게시 금지 (보기·댓글은 가능)', !!b.locked)}
@@ -1131,6 +1588,10 @@ function openSettings() {
     <div class="danger-zone"><button class="btn sm" id="s-dup" type="button">📄 보드 복제</button><button class="btn sm" id="s-logout" type="button">교사 로그아웃</button><button class="btn sm danger" id="s-clear" type="button">모든 게시물 삭제</button><button class="btn sm danger" id="s-del" type="button">보드 삭제</button></div>
     <div class="mfoot"><button class="btn" data-close>취소</button><button class="btn primary" id="s-save">저장</button></div>`);
   $('#s-react', m).value = b.reaction || 'like';
+  const dimC = () => $('#s-cmore', m).classList.toggle('dim', cmode === 'off' || cmode === 'teacher');
+  pickGroup($('#s-cmode', m), 'cm', v => { cmode = v; $$('[data-cm]', m).forEach(x => x.setAttribute('aria-checked', x.dataset.cm === v)); dimC(); });
+  dimC();
+  if (!HS.all.length && S.store.listBoards) S.store.listBoards().then(l => { HS.all = l; const dl = $('#s-glist', m); if (dl) dl.innerHTML = groupOptions(l); }).catch(() => {});
   pickGroup($('#s-lay', m), 'l', v => layout = v);
   pickGroup($('#s-bg', m), 'bg', v => bg = v);
   const drawSecs = () => {
@@ -1152,9 +1613,11 @@ function openSettings() {
       catch (e) { return toast(authMsg(e)); }
     }
     const patch = { title, desc: $('#s-desc', m).value.trim(), layout, bg, reaction: $('#s-react', m).value, sections: sections.map(s => ({ id: s.id, name: s.name.trim() || '섹션' })),
-      allowComments: $('#s-comments', m).checked, showAuthor: $('#s-author', m).checked, moderation: $('#s-mod', m).checked, locked: $('#s-lock', m).checked };
+      group: $('#s-group', m).value.trim().slice(0, 30),
+      commentPolicy: { mode: cmode, maxLen: +$('#s-clen', m).value, perPost: +$('#s-cper', m).value, cooldown: +$('#s-ccd', m).value, filter: $('#s-cfilter', m).checked },
+      allowComments: cmode !== 'off', showAuthor: $('#s-author', m).checked, moderation: $('#s-mod', m).checked, locked: $('#s-lock', m).checked };
     try {
-      await S.store.updateBoard(S.boardId, patch);
+      await S.store.updateBoard(S.boardId, patch); rememberGroup(patch.group);
       if (code !== oldCode) { await S.store.changeCode(S.boardId, oldCode || null, code); S.code = code; history.replaceState(null, '', '#b-' + code); S.shellKey = null; }
       m.close(); toast(code !== oldCode ? `저장했어요 · 새 코드 ${code}` : '저장했어요');
     } catch (e) { toast('저장 실패: ' + authMsg(e)); }
@@ -1171,7 +1634,7 @@ function openSettings() {
   };
   $('#s-clear', m).onclick = async () => {
     if (!(await ask(`게시물 ${S.posts.length}개를 모두 삭제할까요? 되돌릴 수 없어요.`, '모두 삭제'))) return;
-    try { await Promise.all(S.posts.map(p => S.store.deletePost(S.boardId, p.id))); toast('모두 삭제했어요'); } catch (e) { toast('오류: ' + e.message); }
+    try { await Promise.all(S.posts.map(p => removePost(p))); toast('모두 삭제했어요'); } catch (e) { toast('오류: ' + e.message); }
   };
   $('#s-del', m).onclick = async () => {
     if (!(await ask(`<b>${esc(b.title)}</b> 보드와 모든 게시물을 삭제할까요? 되돌릴 수 없어요.`, '보드 삭제'))) return;
@@ -1181,10 +1644,11 @@ function openSettings() {
 function openExport() {
   const b = S.board, secName = Object.fromEntries((b.sections || []).map(s => [s.id, s.name]));
   const ps = visiblePosts();
-  const rows = [['섹션', '제목', '내용', '링크', '작성자', '작성시각', '좋아요', '평균별점', '승인', '댓글 수', '댓글']];
-  ps.forEach(p => { const r = Object.values(p.ratings || {}); rows.push([secName[p.sectionId] || '', p.title, p.body, p.link, p.author, fullDate(p.createdAt), (p.likedBy || []).length, r.length ? (r.reduce((a, c) => a + c, 0) / r.length).toFixed(1) : '', p.approved === false ? '대기' : '공개', (p.comments || []).length, (p.comments || []).map(c => `${c.author}: ${c.text}`).join(' / ')]); });
+  const okC = p => (p.comments || []).filter(c => c.approved !== false), pendN = p => (p.comments || []).length - okC(p).length;
+  const rows = [['섹션', '제목', '내용', '링크', '첨부파일', '작성자', '작성시각', '좋아요', '평균별점', '승인', '댓글 수', '승인 대기 댓글 수', '댓글']];
+  ps.forEach(p => { const r = Object.values(p.ratings || {}); rows.push([secName[p.sectionId] || '', p.title, p.body, p.link, safeFile(p.file)?.name || '', p.author, fullDate(p.createdAt), (p.likedBy || []).length, r.length ? (r.reduce((a, c) => a + c, 0) / r.length).toFixed(1) : '', p.approved === false ? '대기' : '공개', okC(p).length, pendN(p), okC(p).map(c => `${c.author}: ${c.text}`).join(' / ')]); });
   const csv = '﻿' + rows.map(r => r.map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(',')).join('\r\n');
-  const text = ps.map(p => `■ ${p.title || '(제목 없음)'} — ${p.author}\n${p.body || ''}${p.link ? '\n' + p.link : ''}${(p.comments || []).map(c => `\n   └ ${c.author}: ${c.text}`).join('')}`).join('\n\n');
+  const text = ps.map(p => `■ ${p.title || '(제목 없음)'} — ${p.author}\n${p.body || ''}${p.link ? '\n' + p.link : ''}${safeFile(p.file) ? '\n📎 ' + p.file.name : ''}${okC(p).map(c => `\n   └ ${c.author}: ${c.text}`).join('')}`).join('\n\n');
   const m = openModal(`<h2>⬇ 내보내기</h2><p class="muted" style="margin:0 0 14px">게시물 ${ps.length}개 (현재 검색·정렬 기준)</p>
     <div style="display:flex;flex-direction:column;gap:8px">
       <button class="btn" id="x-csv">📊 엑셀용 CSV 파일 다운로드</button>
